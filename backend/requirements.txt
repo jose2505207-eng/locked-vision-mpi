@@ -1,0 +1,5 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.4
+# Optional sponsor integration (only used if SENTRY_DSN is set):
+# sentry-sdk==2.7.1

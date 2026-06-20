@@ -1,0 +1,58 @@
+{
+  "MPI-LEGO-001": {
+    "mpi_id": "MPI-LEGO-001",
+    "title": "LEGO Demo Assembly",
+    "steps": [
+      {
+        "step": 1,
+        "type": "move",
+        "object": "red_block",
+        "from_zone": "red_home",
+        "to_zone": "assembly_zone",
+        "instruction": "Move the RED block from RED HOME to the ASSEMBLY ZONE."
+      },
+      {
+        "step": 2,
+        "type": "move",
+        "object": "blue_block",
+        "from_zone": "blue_home",
+        "to_zone": "assembly_zone",
+        "instruction": "Move the BLUE block from BLUE HOME to the ASSEMBLY ZONE."
+      },
+      {
+        "step": 3,
+        "type": "tool_use",
+        "object": "tool_1",
+        "home_zone": "tool_1_home",
+        "instruction": "Use TOOL 1. Remove it from TOOL 1 HOME and return it to TOOL 1 HOME to complete the step."
+      },
+      {
+        "step": 4,
+        "type": "move",
+        "object": "yellow_block",
+        "from_zone": "yellow_home",
+        "to_zone": "assembly_zone",
+        "instruction": "Move the YELLOW block from YELLOW HOME to the ASSEMBLY ZONE."
+      },
+      {
+        "step": 5,
+        "type": "move",
+        "object": "finished_assembly",
+        "from_zone": "assembly_zone",
+        "to_zone": "complete_zone",
+        "instruction": "Move the FINISHED ASSEMBLY to the COMPLETE ZONE."
+      }
+    ],
+    "final_6s": {
+      "tools_home": [
+        { "object": "tool_1", "zone": "tool_1_home" },
+        { "object": "tool_2", "zone": "tool_2_home" }
+      ],
+      "parts_home": [
+        { "object": "green_block", "zone": "green_home" }
+      ],
+      "assembly_clear_zone": "assembly_zone",
+      "finished_assembly": { "object": "finished_assembly", "zone": "complete_zone" }
+    }
+  }
+}

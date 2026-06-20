@@ -1,0 +1,10 @@
+{
+  "work_orders": [
+    {
+      "work_order_id": "WO-1001",
+      "product": "LEGO Demo Assembly",
+      "mpi_id": "MPI-LEGO-001",
+      "status": "queued"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "golden_view": { "width": 1280, "height": 720 },
+  "description": "Zone bounding boxes are [x1, y1, x2, y2] in golden-view pixel coordinates. The camera is fixed; these zones are only valid while calibration passes.",
+  "zones": {
+    "tool_1_home": [40, 40, 200, 200],
+    "tool_2_home": [220, 40, 380, 200],
+    "red_home": [40, 520, 200, 680],
+    "blue_home": [220, 520, 380, 680],
+    "yellow_home": [400, 520, 560, 680],
+    "green_home": [580, 520, 740, 680],
+    "assembly_zone": [520, 240, 840, 520],
+    "complete_zone": [960, 240, 1240, 520]
+  }
+}
