@@ -1,11 +1,12 @@
 // Station readiness = camera locked + calibrated + zones clear.
-// In the mock demo, "station_ready" evidence drives this green.
-export default function StationReadinessPanel({ ready, healthOk }) {
+// Reflects the CURRENT mock evidence: green when the station is clean,
+// red while parts are out on the bench / tools are away from home.
+export default function StationReadinessPanel({ ready, healthOk, zonesClear }) {
   const checks = [
     { label: "Backend / MES online", ok: healthOk },
-    { label: "Camera locked (golden view)", ok: ready },
-    { label: "Calibration within tolerance", ok: ready },
-    { label: "Zones clear at home", ok: ready },
+    { label: "Camera locked (golden view)", ok: healthOk },
+    { label: "Calibration within tolerance", ok: healthOk },
+    { label: "Zones clear at home", ok: zonesClear },
   ];
   return (
     <div className="panel">

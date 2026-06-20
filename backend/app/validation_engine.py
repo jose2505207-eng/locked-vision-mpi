@@ -19,6 +19,11 @@ def _zone_of(objects, name):
     return None
 
 
+def _h(name):
+    """Humanize an object/zone id, e.g. 'red_block' -> 'red block'."""
+    return (name or "").replace("_", " ")
+
+
 def _result(status, can_advance, message, objects):
     return {
         "status": status,
@@ -45,7 +50,7 @@ def validate_step(step, vision_state, progress):
         if zone == to_zone:
             return _result(
                 "passed", True,
-                f"Step {step_no} complete: {target} is in {to_zone}.",
+                f"Step {step_no} passed: the {_h(target)} is in the {_h(to_zone)}.",
                 objects,
             )
         # Out-of-sequence detection: a different part is already in the target
@@ -59,13 +64,14 @@ def validate_step(step, vision_state, progress):
         if unexpected:
             return _result(
                 "blocked", False,
-                f"Out of sequence: {unexpected[0]} is in {to_zone}, but step "
-                f"{step_no} requires {target}.",
+                f"Step blocked: the {_h(unexpected[0])} is in the {_h(to_zone)}, "
+                f"but step {step_no} needs the {_h(target)}. Remove it and move "
+                f"the {_h(target)} into the {_h(to_zone)}.",
                 objects,
             )
         return _result(
             "blocked", False,
-            f"Waiting for {target} to reach {to_zone}.",
+            f"Step blocked: move the {_h(target)} into the {_h(to_zone)}.",
             objects,
         )
 
@@ -79,19 +85,21 @@ def validate_step(step, vision_state, progress):
             progress[removed_key] = True
             return _result(
                 "blocked", False,
-                f"{tool} is out of {home}. Return {tool} to {home} to "
-                f"complete step {step_no}.",
+                f"Step blocked: {_h(tool)} is out of its home. Return {_h(tool)} "
+                f"to {_h(home)} to finish step {step_no}.",
                 objects,
             )
         if progress.get(removed_key):
             return _result(
                 "passed", True,
-                f"Step {step_no} complete: {tool} was used and returned to {home}.",
+                f"Step {step_no} passed: {_h(tool)} was used and returned to "
+                f"{_h(home)}.",
                 objects,
             )
         return _result(
             "blocked", False,
-            f"Pick up {tool} from {home} to use it, then return it home.",
+            f"Step blocked: pick up {_h(tool)} to use it, then return it to "
+            f"{_h(home)}.",
             objects,
         )
 
@@ -105,12 +113,12 @@ def validate_final_6s(final_cfg, vision_state):
 
     for tool in final_cfg.get("tools_home", []):
         if _zone_of(objects, tool["object"]) != tool["zone"]:
-            failures.append(f"{tool['object']} must be returned to {tool['zone']}.")
+            failures.append(f"return {_h(tool['object'])} to {_h(tool['zone'])}")
 
     for part in final_cfg.get("parts_home", []):
         if _zone_of(objects, part["object"]) != part["zone"]:
             failures.append(
-                f"Unused part {part['object']} must be returned to {part['zone']}."
+                f"return the unused {_h(part['object'])} to {_h(part['zone'])}"
             )
 
     clear_zone = final_cfg.get("assembly_clear_zone")
@@ -120,22 +128,23 @@ def validate_final_6s(final_cfg, vision_state):
             if o.get("zone") == clear_zone and o["object"] in PART_NAMES
         ]
         if leftover:
-            failures.append(
-                f"Assembly zone must be clear; found {', '.join(leftover)}."
-            )
+            names = ", ".join(_h(n) for n in leftover)
+            failures.append(f"clear the {_h(clear_zone)} (found {names})")
 
     finished = final_cfg.get("finished_assembly")
     if finished and _zone_of(objects, finished["object"]) != finished["zone"]:
-        failures.append(f"{finished['object']} must be in {finished['zone']}.")
+        failures.append(
+            f"move the {_h(finished['object'])} to the {_h(finished['zone'])}"
+        )
 
     if failures:
         return _result(
             "blocked", False,
-            "Final 6S blocked: " + " ".join(failures),
+            "Final 6S blocked: " + "; ".join(failures) + ".",
             objects,
         )
     return _result(
         "passed", True,
-        "Final 6S passed: station reset verified. Work order can close.",
+        "Final 6S passed: station reset verified — work order can close.",
         objects,
     )

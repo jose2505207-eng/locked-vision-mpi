@@ -15,9 +15,14 @@ frontend/dist/
 .env.*
 !.env.example
 
-# Vision snapshots (runtime evidence) — keep the folder, ignore images
-vision/snapshots/*
+# Vision — generated camera/test artifacts (keep folder structure via .gitkeep)
+vision/snapshots/*.jpg
+vision/snapshots/*.jpeg
+vision/snapshots/*.png
+vision/snapshots/test_targets/*.png
+vision/color_ranges.local.json
 !vision/snapshots/.gitkeep
+!vision/snapshots/test_targets/.gitkeep
 
 # Runtime audit log (regenerated). Comment out if you want to commit demo runs.
 backend/app/data/audit_log.jsonl

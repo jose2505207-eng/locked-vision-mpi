@@ -9,6 +9,37 @@ import ErrorBanner from "./components/ErrorBanner.jsx";
 import AuditLogPanel from "./components/AuditLogPanel.jsx";
 import Final6SCheckPanel from "./components/Final6SCheckPanel.jsx";
 
+const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
+
+// Station is "ready" when the camera is online, the assembly zone is empty, and
+// both tools are home — i.e. the mock evidence shows a clean station.
+function zonesClear(objects) {
+  if (!objects || objects.length === 0) return false;
+  for (const o of objects) {
+    if (o.object === "tool_1" && o.zone !== "tool_1_home") return false;
+    if (o.object === "tool_2" && o.zone !== "tool_2_home") return false;
+    if (PARTS.includes(o.object) && o.zone === "assembly_zone") return false;
+  }
+  return true;
+}
+
+// Which mock-evidence button is the correct next move for the current state.
+// Drives the highlighted "recommended" button so judges can't get lost.
+function recommendedScenario(stepInfo, lastScenario) {
+  if (!stepInfo) return "station_ready";
+  const { status, current_step } = stepInfo;
+  if (status === "queued") return "station_ready";
+  if (status === "awaiting_final_6s" || status === "completed") return "final_6s_pass";
+  switch (current_step) {
+    case 1: return "step1_done";
+    case 2: return "step2_done";
+    case 3: return lastScenario === "step3_tool_removed" ? "step3_tool_returned" : "step3_tool_removed";
+    case 4: return "step4_done";
+    case 5: return "step5_done";
+    default: return null;
+  }
+}
+
 export default function App() {
   const [healthOk, setHealthOk] = useState(false);
   const [workOrders, setWorkOrders] = useState([]);
@@ -19,7 +50,6 @@ export default function App() {
   const [objects, setObjects] = useState([]);
   const [lastScenario, setLastScenario] = useState(null);
   const [audit, setAudit] = useState([]);
-  const [stationReady, setStationReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -85,8 +115,23 @@ export default function App() {
       const res = await api.postVisionState(selectedId, { scenario });
       setObjects(res.objects);
       setLastScenario(scenario);
-      // Station-ready evidence flips the readiness panel green.
-      if (scenario === "station_ready") setStationReady(true);
+    });
+
+  const onReset = () =>
+    guard(async () => {
+      await api.resetDemo();
+      setValidation(null);
+      setSixSResult(null);
+      setObjects([]);
+      setLastScenario(null);
+      setAudit([]);
+      const list = await refreshWorkOrders();
+      const id = list.length ? list[0].work_order_id : null;
+      setSelectedId(id);
+      if (id) {
+        await refreshStep(id);
+        await refreshAudit(id);
+      }
     });
 
   const onValidate = () =>
@@ -120,6 +165,8 @@ export default function App() {
 
   const status = stepInfo?.status;
   const showSixS = status === "awaiting_final_6s" || status === "completed";
+  const stationReady = healthOk && zonesClear(objects);
+  const recommended = recommendedScenario(stepInfo, lastScenario);
 
   return (
     <div className="app">
@@ -131,9 +178,15 @@ export default function App() {
             forward when the real world is correct.
           </div>
         </div>
-        <div className="health">
-          <span className={`dot ${healthOk ? "ok" : "bad"}`} />
-          backend {healthOk ? "online" : "offline"}
+        <div className="topbar-right">
+          <span className="demo-badge">🧪 DEMO MODE · MOCK VISION EVIDENCE</span>
+          <button className="btn-reset" onClick={onReset} disabled={busy}>
+            ⟲ Reset Demo
+          </button>
+          <div className="health">
+            <span className={`dot ${healthOk ? "ok" : "bad"}`} />
+            backend {healthOk ? "online" : "offline"}
+          </div>
         </div>
       </div>
 
@@ -152,7 +205,11 @@ export default function App() {
             onSelect={setSelectedId}
             onStart={onStart}
           />
-          <StationReadinessPanel ready={stationReady} healthOk={healthOk} />
+          <StationReadinessPanel
+            ready={stationReady}
+            healthOk={healthOk}
+            zonesClear={zonesClear(objects)}
+          />
         </div>
 
         {/* Center column */}
@@ -180,6 +237,7 @@ export default function App() {
           <LiveCameraPanel
             onSimulate={onSimulate}
             lastScenario={lastScenario}
+            recommended={recommended}
             disabled={busy || !selectedId}
           />
           <AuditLogPanel entries={audit} />

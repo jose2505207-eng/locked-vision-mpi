@@ -39,6 +39,14 @@ class MPIStateMachine:
     def get(self, work_order_id):
         return self.runtimes.get(work_order_id)
 
+    def reset_all(self):
+        """Return every work order to its initial queued state (demo reset)."""
+        for work_order in self.mes.list_work_orders():
+            steps = self.mes.get_steps(work_order["mpi_id"])
+            self.runtimes[work_order["work_order_id"]] = WorkOrderRuntime(
+                work_order, steps
+            )
+
     def start(self, work_order_id):
         rt = self.get(work_order_id)
         rt.current_step = 1

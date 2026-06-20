@@ -91,6 +91,14 @@ def health():
     return {"status": "ok", "service": "locked-vision-mpi-backend"}
 
 
+@app.post("/demo/reset")
+def reset_demo():
+    """Reset all work orders and clear the audit log for a clean re-demo."""
+    sm.reset_all()
+    audit.clear()
+    return {"status": "ok", "message": "Demo reset. All work orders back to queued."}
+
+
 @app.get("/work-orders", response_model=list[WorkOrderSummary])
 def list_work_orders():
     out = []

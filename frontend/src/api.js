@@ -44,6 +44,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   auditLog: (id) => req(`/work-orders/${id}/audit-log`),
+  resetDemo: () => req(`/demo/reset`, { method: "POST" }),
 };
 
 // Mock vision scenarios the operator/demo-driver can post (camera-less demo).
