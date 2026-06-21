@@ -2,6 +2,20 @@
 
 **Track:** Best Use of Deepgram.
 
+## Status: scaffold only (NOT wired)
+
+> ⚠️ There is **no Deepgram code, SDK, or API key** wired into the app. The demo's
+> audible voice is produced by the **browser Web Speech API** (`speechSynthesis`)
+> in `frontend/src/voice.js` — a clearly-labeled fallback so the demo is always
+> audible. We do **not** pretend Deepgram is active.
+>
+> To wire Deepgram TTS later: implement `speakWithDeepgram()` in
+> `frontend/src/voice.js` (or a backend `/api/voice` route that streams Deepgram
+> audio), set `VOICE_PROVIDER = "deepgram"`, and keep the browser path as the
+> offline fallback. Phrases are already backend-generated (the `voice` field on
+> `/api/verification-sessions/{id}/blocks/submit`), so only the audio transport
+> changes.
+
 ## Why it fits
 
 A real operator's hands are on the parts and tools, not the keyboard. Deepgram

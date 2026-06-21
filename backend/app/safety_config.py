@@ -18,6 +18,18 @@ def required_sequence() -> list:
     return list(REQUIRED_BLOCK_SEQUENCE)
 
 
+def ppe_gate_enabled() -> bool:
+    """Whether PPE is required for can_open_work_order, in addition to the block
+    sequence.
+
+    DEFAULT: false. The presentation demo is intentionally block-sequence-only —
+    GREEN -> BLUE -> RED -> YELLOW unlocks the Work Order, no tools, no PPE gate.
+    Set PPE_GATE_ENABLED=true to also require a valid safety-glasses check (the
+    full PPE machinery stays intact and tested either way).
+    """
+    return os.getenv("PPE_GATE_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+
+
 def normalize_color(color: str) -> str:
     return (color or "").strip().lower()
 

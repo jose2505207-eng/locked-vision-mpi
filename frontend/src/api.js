@@ -52,6 +52,21 @@ export const api = {
     }),
   resetDemo: () => req(`/demo/reset`, { method: "POST" }),
 
+  // --- Block-sequence verification session (the demo flow) ---
+  vsStart: (workOrderId, workerId = "operator-001") =>
+    req(`/api/verification-sessions/start`, {
+      method: "POST",
+      body: JSON.stringify({ work_order_id: workOrderId, worker_id: workerId }),
+    }),
+  vsSubmitBlock: (sessionId, color) =>
+    req(`/api/verification-sessions/${sessionId}/blocks/submit`, {
+      method: "POST",
+      body: JSON.stringify({ submitted_color: color }),
+    }),
+  vsStatus: (sessionId) => req(`/api/verification-sessions/${sessionId}/status`),
+  vsUnlock: (workOrderId) =>
+    req(`/api/work-orders/${workOrderId}/unlock`, { method: "POST", body: "{}" }),
+
   // --- Safety-Glasses PPE verification ---
   ppeConfig: () => req("/api/ppe/config"),
   ppeCheck: async (workOrderId, workerId, blob) => {

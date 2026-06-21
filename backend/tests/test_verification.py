@@ -93,15 +93,19 @@ def test_wrong_order_caught():
     check("3b. wrong attempt audited", len(logged) >= 1 and logged[0]["error_type"] == "wrong_block_order")
 
 
-# 4. WO stays locked when PPE is missing (sequence complete only).
-def test_locked_without_ppe():
+# 4. DEMO DEFAULT: the block sequence ALONE unlocks the WO (no tools, no PPE gate).
+def test_unlock_blocks_only():
+    os.environ.pop("PPE_GATE_ENABLED", None)  # default: gate off
     s = _start("WO-T4")
     sid = s["session_id"]
+    last = None
     for c in ["green", "blue", "red", "yellow"]:
-        _submit(sid, c)
+        last = _submit(sid, c)
     u = client.post("/api/work-orders/WO-T4/unlock").json()
-    check("4. locked without PPE", u["unlocked"] is False
-          and "ppe_verification" in u["missing_requirements"], extra=str(u["missing_requirements"]))
+    check("4. block sequence alone unlocks (no tools/PPE gate)",
+          last["sequence_passed"] and last["can_open_work_order"] is True
+          and u["unlocked"] is True and u["missing_requirements"] == [],
+          extra=str(u["missing_requirements"]))
 
 
 # 5. WO stays locked when sequence is incomplete (PPE only).
@@ -116,18 +120,53 @@ def test_locked_incomplete_sequence():
           and "block_sequence" in u["missing_requirements"], extra=str(u["missing_requirements"]))
 
 
-# 6. WO unlocks ONLY when PPE verified AND sequence complete.
-def test_unlock_when_both():
+# 6. WO stays locked until the FULL sequence is complete (partial != unlock).
+def test_locked_until_full_sequence():
+    os.environ.pop("PPE_GATE_ENABLED", None)
     s = _start("WO-T6")
     sid = s["session_id"]
-    ppe = _ppe(sid, "pass")
-    for c in ["green", "blue", "red", "yellow"]:
+    for c in ["green", "blue", "red"]:  # missing yellow
         last = _submit(sid, c)
-    st = client.get(f"/api/verification-sessions/{sid}/status").json()
-    u = client.post("/api/work-orders/WO-T6/unlock").json()
-    check("6. unlock when both pass", ppe["ppe_verified"] and last["sequence_passed"]
-          and st["can_open_work_order"] is True and u["unlocked"] is True
-          and u["can_open_work_order"] is True)
+    u_partial = client.post("/api/work-orders/WO-T6/unlock").json()
+    last = _submit(sid, "yellow")
+    u_full = client.post("/api/work-orders/WO-T6/unlock").json()
+    check("6. locked until full sequence, then unlocks",
+          u_partial["unlocked"] is False and last["sequence_passed"]
+          and u_full["unlocked"] is True)
+
+
+# 6b. Optional PPE gate (PPE_GATE_ENABLED=true) still requires PPE on top.
+def test_optional_ppe_gate():
+    os.environ["PPE_GATE_ENABLED"] = "true"
+    try:
+        s = _start("WO-T6B")
+        sid = s["session_id"]
+        for c in ["green", "blue", "red", "yellow"]:
+            _submit(sid, c)
+        u_no_ppe = client.post("/api/work-orders/WO-T6B/unlock").json()
+        _ppe(sid, "pass")
+        u_ppe = client.post("/api/work-orders/WO-T6B/unlock").json()
+        check("6b. PPE gate (when enabled) requires PPE too",
+              u_no_ppe["unlocked"] is False
+              and "ppe_verification" in u_no_ppe["missing_requirements"]
+              and u_ppe["unlocked"] is True)
+    finally:
+        os.environ.pop("PPE_GATE_ENABLED", None)
+
+
+# 6c. Backend generates a spoken voice payload on block events.
+def test_voice_payloads():
+    s = _start("WO-T6C")
+    sid = s["session_id"]
+    g = _submit(sid, "green")
+    w = _submit(sid, "red")  # wrong (blue expected)
+    for c in ["blue", "red", "yellow"]:
+        done = _submit(sid, c)
+    check("6c. backend voice payloads",
+          g["voice"] == "Green block verified."
+          and w["voice"] == "Wrong block. Please follow the sequence."
+          and done["voice"] == "Sequence complete. Work order unlocked.",
+          extra=f'{g["voice"]} | {w["voice"]} | {done["voice"]}')
 
 
 # 7. Frontend cannot force can_open_work_order via the payload.
@@ -152,8 +191,9 @@ def test_required_sequence_from_config():
 
 def main():
     for fn in [test_start_session, test_correct_sequence, test_wrong_order_caught,
-               test_locked_without_ppe, test_locked_incomplete_sequence,
-               test_unlock_when_both, test_frontend_cannot_force,
+               test_unlock_blocks_only, test_locked_incomplete_sequence,
+               test_locked_until_full_sequence, test_optional_ppe_gate,
+               test_voice_payloads, test_frontend_cannot_force,
                test_required_sequence_from_config]:
         fn()
     passed = sum(1 for _, ok in _results if ok)

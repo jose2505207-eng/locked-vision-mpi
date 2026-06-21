@@ -36,7 +36,27 @@ def _ppe_current(session: dict) -> bool:
 
 
 def _can_open(session: dict) -> bool:
-    return _ppe_current(session) and bool(session.get("sequence_passed"))
+    """The ONE place can_open_work_order is decided.
+
+    Demo rule (default): the completed block sequence alone unlocks the Work
+    Order — no tools, no PPE gate. If PPE_GATE_ENABLED=true, a valid (unexpired)
+    safety-glasses check is also required. Tool state never participates.
+    """
+    if not session.get("sequence_passed"):
+        return False
+    if safety_config.ppe_gate_enabled():
+        return _ppe_current(session)
+    return True
+
+
+def _voice_line(outcome: dict, session: dict) -> str:
+    """Backend-generated spoken phrase for a block event (frontend speaks it)."""
+    if not outcome["accepted"]:
+        return "Wrong block. Please follow the sequence."
+    if session.get("sequence_passed"):
+        return "Sequence complete. Work order unlocked."
+    color = (outcome["received_color"] or "").capitalize()
+    return f"{color} block verified."
 
 
 # --- lifecycle ---------------------------------------------------------------
@@ -140,6 +160,7 @@ def submit_block(session_id: str, submitted_color: str) -> dict:
         "expected_next_color": session["expected_next_color"],
         "sequence_passed": session["sequence_passed"],
         "can_open_work_order": can,
+        "voice": _voice_line(outcome, session),  # backend-generated spoken phrase
     }
     if not outcome["accepted"]:
         resp.update({
@@ -185,19 +206,21 @@ def evaluate_unlock(work_order_id: str) -> dict:
             "session_id": None,
         }
     missing = []
-    if not _ppe_current(session):
+    if safety_config.ppe_gate_enabled() and not _ppe_current(session):
         missing.append("ppe_verification")
     if not session["sequence_passed"]:
         missing.append("block_sequence")
     can = not missing
+    ok_msg = (
+        "Work Order unlocked. Block sequence and PPE verified."
+        if safety_config.ppe_gate_enabled()
+        else "Work Order unlocked. Block sequence verified."
+    )
     return {
         "work_order_id": work_order_id,
         "unlocked": can,
         "can_open_work_order": can,
-        "message": (
-            "Work Order unlocked. PPE and block sequence verified." if can
-            else "Work Order remains locked."
-        ),
+        "message": ok_msg if can else "Work Order remains locked.",
         "missing_requirements": missing,
         "session_id": session["session_id"],
     }
