@@ -273,6 +273,19 @@ pre.cmd {
 .ppe-head h2 { margin: 0; font-size: 20px; letter-spacing: 0.3px; text-transform: none; color: var(--text); }
 .ppe-wo { color: var(--accent); font-weight: 800; font-size: 14px; }
 .ppe-sub { color: var(--muted); font-size: 13px; margin: 6px 0 14px; line-height: 1.4; }
+/* Live status pill reflecting the modal state machine. */
+.ppe-phase {
+  display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  vertical-align: middle;
+}
+.ppe-phase-starting_camera, .ppe-phase-capturing, .ppe-phase-verifying {
+  border-color: var(--accent); color: var(--accent);
+}
+.ppe-phase-camera_ready { border-color: var(--accent); color: var(--accent); }
+.ppe-phase-verified { background: var(--pass-bg); border-color: var(--pass); color: var(--pass); }
+.ppe-phase-failed, .ppe-phase-camera_error { background: var(--block-bg); border-color: var(--block); color: #ffd7d5; }
 
 .ppe-camera {
   position: relative; background: #05070a; border: 2px solid var(--line);
@@ -304,6 +317,19 @@ pre.cmd {
 .ppe-result { margin-top: 12px; }
 .ppe-meta { color: var(--muted); font-size: 12px; margin-top: 4px; font-weight: 500; }
 .ppe-err { margin-top: 12px; font-size: 14px; }
+
+/* Honest PPE debug panel */
+.ppe-debug {
+  margin-top: 12px; padding: 8px 10px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: 12px;
+}
+.ppe-debug-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.ppe-debug-row span { color: var(--muted); }
+.ppe-debug-row strong { color: var(--text); text-align: right; }
+.ppe-src { text-transform: uppercase; letter-spacing: 0.5px; }
+.ppe-src-real { color: var(--pass); }
+.ppe-src-mock { color: var(--accent); }
+.ppe-src-unavailable { color: var(--block); }
 
 .ppe-actions { display: flex; gap: 10px; margin-top: 18px; }
 .btn-ghost { background: transparent; }

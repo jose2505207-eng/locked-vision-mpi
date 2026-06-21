@@ -6,10 +6,10 @@
       {
         "step": 1,
         "type": "move",
-        "object": "red_block",
-        "from_zone": "red_home",
+        "object": "green_block",
+        "from_zone": "green_home",
         "to_zone": "assembly_zone",
-        "instruction": "Move the RED block from RED HOME to the ASSEMBLY ZONE."
+        "instruction": "Move the GREEN block from GREEN HOME to the ASSEMBLY ZONE."
       },
       {
         "step": 2,
@@ -21,10 +21,11 @@
       },
       {
         "step": 3,
-        "type": "tool_use",
-        "object": "tool_1",
-        "home_zone": "tool_1_home",
-        "instruction": "Use TOOL 1. Remove it from TOOL 1 HOME and return it to TOOL 1 HOME to complete the step."
+        "type": "move",
+        "object": "red_block",
+        "from_zone": "red_home",
+        "to_zone": "assembly_zone",
+        "instruction": "Move the RED block from RED HOME to the ASSEMBLY ZONE."
       },
       {
         "step": 4,
@@ -36,23 +37,16 @@
       },
       {
         "step": 5,
-        "type": "move",
-        "object": "finished_assembly",
-        "from_zone": "assembly_zone",
+        "type": "move_all",
+        "objects": ["green_block", "blue_block", "red_block", "yellow_block"],
         "to_zone": "complete_zone",
-        "instruction": "Move the FINISHED ASSEMBLY to the COMPLETE ZONE."
+        "instruction": "Move ALL FOUR blocks from the ASSEMBLY ZONE to the COMPLETE ZONE."
       }
     ],
     "final_6s": {
-      "tools_home": [
-        { "object": "tool_1", "zone": "tool_1_home" },
-        { "object": "tool_2", "zone": "tool_2_home" }
-      ],
-      "parts_home": [
-        { "object": "green_block", "zone": "green_home" }
-      ],
-      "assembly_clear_zone": "assembly_zone",
-      "finished_assembly": { "object": "finished_assembly", "zone": "complete_zone" }
+      "tools_home": [],
+      "parts_home": [],
+      "assembly_clear_zone": "assembly_zone"
     }
   }
 }

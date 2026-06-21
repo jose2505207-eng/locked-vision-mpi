@@ -22,8 +22,34 @@ Config (environment variables):
     PPE_REQUIRED               "true"/"false" — enforce on work-order start
 """
 import base64
+import logging
+import random
+import time
 
 from .safety_config import ppe_config as _ppe_config
+
+log = logging.getLogger("ppe")
+
+
+def _force_ipv4_http():
+    """Force outbound HTTP to use IPv4.
+
+    Some demo networks black-hole IPv6 egress. curl survives via Happy-Eyeballs
+    (parallel IPv4/IPv6), but requests/urllib3 tries each IPv6 address first and
+    blocks ~5s per address before falling back to IPv4 — enough to blow the PPE
+    timeout even though the Roboflow endpoint itself answers in ~2s. Pinning the
+    address family to AF_INET makes the call fast and reliable.
+    """
+    try:
+        import socket
+        import urllib3.util.connection as _conn
+        _conn.allowed_gai_family = lambda: socket.AF_INET
+        log.info("[PPE] forced IPv4 for outbound HTTP (IPv6 egress unreliable)")
+    except Exception as e:  # pragma: no cover
+        log.warning("[PPE] could not force IPv4: %s", e)
+
+
+_force_ipv4_http()
 
 # Class names (normalized) that COUNT AS verified eye protection.
 POSITIVE_CLASSES = {
@@ -51,10 +77,12 @@ def get_config() -> dict:
 
 
 def model_configured() -> bool:
-    cfg = get_config()
-    has_workflow = bool(cfg["api_key"] and cfg["workspace"] and cfg["workflow_id"])
-    has_detect = bool(cfg["api_key"] and cfg["model_id"])
-    return has_workflow or has_detect
+    """True when PPE verification can actually run (real model OR explicit mock).
+
+    Drives the frontend gate: when False the modal stays locked with an honest
+    "PPE unavailable" reason rather than auto-opening or faking a pass.
+    """
+    return get_config()["provider"] in ("roboflow_workflow", "roboflow", "mock")
 
 
 def call_roboflow(image_bytes: bytes, cfg: dict) -> list:
@@ -123,9 +151,12 @@ def _extract_predictions(workflow_result) -> list:
 def call_roboflow_workflow(image_path: str, cfg: dict) -> list:
     """Run a Roboflow Workflow on an image and return raw predictions.
 
-    Uses the inference_sdk HTTP client (run_workflow). This is the working,
-    snapshot-based equivalent of the WebRTC streaming snippet — it needs no paid
-    GPU-streaming plan. Raises PPEServiceError if misconfigured or the call fails.
+    Calls the hosted workflow endpoint directly over HTTP
+    (POST {api_url}/infer/workflows/{workspace}/{workflow_id}) with a hard
+    timeout. We deliberately do NOT use inference_sdk.run_workflow(): that method
+    makes an extra blocking call that hangs indefinitely against serverless even
+    though the inference endpoint itself responds in ~2s. Raises PPEServiceError
+    if misconfigured or the call fails.
     """
     if not (cfg["api_key"] and cfg["workspace"] and cfg["workflow_id"]):
         raise PPEServiceError(
@@ -133,22 +164,35 @@ def call_roboflow_workflow(image_path: str, cfg: dict) -> list:
             "ROBOFLOW_WORKSPACE and ROBOFLOW_WORKFLOW_ID."
         )
     try:
-        from inference_sdk import InferenceHTTPClient
-    except ImportError as e:
-        raise PPEServiceError(
-            "inference-sdk not installed. `pip install inference-sdk`."
-        ) from e
+        import requests
+    except ImportError as e:  # pragma: no cover
+        raise PPEServiceError("The 'requests' package is required for PPE checks.") from e
+
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    url = f"{cfg['api_url'].rstrip('/')}/infer/workflows/{cfg['workspace']}/{cfg['workflow_id']}"
+    body = {"api_key": cfg["api_key"], "inputs": {"image": {"type": "base64", "value": b64}}}
+    # (connect, read) — keep read slightly under the route cap so a slow call
+    # surfaces here as a clean error instead of being cancelled by the route.
+    read_to = max(5.0, cfg.get("provider_timeout", 12.0) - 1.0)
     try:
-        client = InferenceHTTPClient(api_url=cfg["api_url"], api_key=cfg["api_key"])
-        result = client.run_workflow(
-            workspace_name=cfg["workspace"],
-            workflow_id=cfg["workflow_id"],
-            images={"image": image_path},
-            use_cache=True,
-        )
+        resp = requests.post(url, json=body, timeout=(3.05, read_to))
+        resp.raise_for_status()
+        data = resp.json()
     except Exception as e:
         raise PPEServiceError(f"Roboflow workflow request failed: {e}") from e
-    return _extract_predictions(result)
+
+    # The HTTP endpoint wraps results in {"outputs": [...]}; the SDK returned the
+    # bare outputs list. Hand the outputs list to the existing flattener.
+    outputs = data.get("outputs", data) if isinstance(data, dict) else data
+    preds = _extract_predictions(outputs)
+    # Debug: parsed class names + confidence so the integration is traceable.
+    # (Raw masks are dropped — they bloat the log; flip to DEBUG for the full body.)
+    log.info("[PPE][parsed] %s", [(p.get("class"), round(float(p.get("confidence", 0)), 3)) for p in preds])
+    if log.isEnabledFor(logging.DEBUG):
+        import json
+        log.debug("[PPE][raw] %s", json.dumps(data, default=str)[:2000])
+    return preds
 
 
 def decide(predictions: list, min_confidence: float) -> dict:
@@ -200,7 +244,15 @@ def decide(predictions: list, min_confidence: float) -> dict:
 
 
 def _mock_predictions(cfg: dict) -> list:
-    """Clearly-labeled development predictions (NOT production)."""
+    """Clearly-labeled development predictions (NOT production).
+
+    Simulates a little provider latency (0.5–1.0s) so the UI exercises its real
+    "verifying" state, and logs loudly so mock mode is never mistaken for a real
+    model call.
+    """
+    why = "DEMO_MOCK_PPE" if cfg.get("mock_mode") else "provider=mock"
+    log.warning("[PPE][MOCK] mock verification active (%s) — NOT a real model call", why)
+    time.sleep(random.uniform(0.5, 1.0))
     if cfg.get("mock_result") == "fail":
         return [{"class": "no_goggles", "confidence": 0.9}]
     return [{"class": "safety_glasses", "confidence": 0.86}]
@@ -214,6 +266,12 @@ def run_check(image_bytes: bytes) -> dict:
     always labeled and never silently presented as production.
     """
     cfg = get_config()
+    log.info("[PPE] run_check provider=%s (%d bytes)", cfg["provider"], len(image_bytes))
+    if cfg["provider"] == "unconfigured":
+        raise PPEServiceError(
+            "PPE model not configured. Set ROBOFLOW_API_KEY (+ workspace/workflow) "
+            "for real verification, or DEMO_MOCK_PPE=true for the emergency fallback."
+        )
     if cfg["provider"] == "mock":
         predictions = _mock_predictions(cfg)
         mode = "mock"
@@ -225,17 +283,26 @@ def run_check(image_bytes: bytes) -> dict:
         try:
             with _os.fdopen(fd, "wb") as f:
                 f.write(image_bytes)
+            log.info("[PPE] calling Roboflow workflow %s/%s", cfg["workspace"], cfg["workflow_id"])
             predictions = call_roboflow_workflow(path, cfg)
+            log.info("[PPE] Roboflow returned %d prediction(s)", len(predictions))
         finally:
             _os.unlink(path)
         mode = "live"
     else:
+        log.info("[PPE] calling Roboflow detect model %s", cfg["model_id"])
         predictions = call_roboflow(image_bytes, cfg)
+        log.info("[PPE] Roboflow returned %d prediction(s)", len(predictions))
         mode = "live"
 
     result = decide(predictions, cfg["min_confidence"])
     if mode == "mock":
-        result["reason"] = "[MOCK] " + result["reason"]
+        # Make the mock verdict unambiguous in logs, audit, and the UI.
+        result["reason"] = (
+            "Mock PPE verification passed"
+            if result["safety_glasses_verified"]
+            else "[MOCK] " + result["reason"]
+        )
     result["mode"] = mode
     result["provider"] = cfg["provider"]
     result["predictions"] = predictions

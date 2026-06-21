@@ -328,7 +328,9 @@ def run_live(args, zones_gv, golden_view):
         print(f"[live] auto-posting every {auto:.1f}s -> {args.post} ({args.wo})", file=sys.stderr)
 
     last_summary = None
+    last_post_summary = None
     last_post = 0.0
+    printed_zones = False
     try:
         while True:
             ok, frame = cap.read()
@@ -340,6 +342,14 @@ def run_live(args, zones_gv, golden_view):
             detections = detect_blocks(frame)
             state = build_vision_state(detections, zones, camera_locked=True)
             annotated = annotate(frame, state, zones)
+
+            # Print the zone rectangles actually in use ONCE (scaled to this frame
+            # size), so a calibration/coordinate mismatch is visible immediately.
+            if not printed_zones:
+                print(f"[zones] frame={w}x{h} golden={golden_view}", file=sys.stderr)
+                for name, rect in zones.items():
+                    print(f"        {name:14s} {rect}", file=sys.stderr)
+                printed_zones = True
 
             # Print only when the detection set changes (keeps the log readable).
             summary = objects_summary(state)
@@ -363,10 +373,30 @@ def run_live(args, zones_gv, golden_view):
             now = time.time()
             if auto > 0 and args.post and (now - last_post) >= auto:
                 try:
-                    post_state(args.post, args.wo, state)
+                    body = {"objects": state["objects"], "source": state.get("source", "camera")}
+                    resp = post_state(args.post, args.wo, state)
                     last_post = now
+                    if args.debug_post:
+                        # Full truth, every post cycle.
+                        print(f"[post] POST {args.post}/work-orders/{args.wo}/vision-state",
+                              file=sys.stderr)
+                        for o in state["objects"]:
+                            x1, y1, x2, y2 = o["bbox"]
+                            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                            print(f"        {o['object']:13s} zone={o.get('zone')} "
+                                  f"center=({cx:.0f},{cy:.0f}) conf={o.get('confidence')}",
+                                  file=sys.stderr)
+                        print(f"        payload={json.dumps(body)}", file=sys.stderr)
+                        print(f"        backend<= accepted={resp.get('accepted')} "
+                              f"source={resp.get('source')} stored={len(resp.get('objects', []))}",
+                              file=sys.stderr)
+                    elif summary != last_post_summary:
+                        # Concise: confirm posting + what landed, only when it changes.
+                        print(f"[post] -> {args.wo}: accepted={resp.get('accepted')} "
+                              f"objects={len(resp.get('objects', []))} ({summary})", file=sys.stderr)
+                        last_post_summary = summary
                 except Exception as e:
-                    print(f"[live] auto-post failed: {e}", file=sys.stderr)
+                    print(f"[live] auto-post FAILED: {e}", file=sys.stderr)
                     last_post = now  # back off one interval
 
             if args.show:
@@ -414,9 +444,24 @@ def main():
                     help="Serve the annotated feed over HTTP for the React UI.")
     ap.add_argument("--vision-port", type=int, default=8010,
                     help="Port for the UI feed server (default 8010).")
-    ap.add_argument("--auto-post-interval", type=float, default=0.0,
-                    help="Seconds between automatic posts to --post (0 = off).")
+    ap.add_argument("--auto-post-interval", type=float, default=None,
+                    help="Seconds between automatic posts to --post "
+                         "(default: 1.0 when --post is set, else off). Use 0 to force off.")
+    ap.add_argument("--debug-post", action="store_true",
+                    help="Print every post cycle: objects (label/zone/center/conf), the exact "
+                         "JSON payload, and the backend response. Makes the evidence flow explicit.")
     args = ap.parse_args()
+
+    # Auto-post defaults ON (1.0s) whenever a --post target is given for a live
+    # run. Without this, the bridge serves the UI feed and computes state but
+    # NEVER posts evidence to the backend unless you press "p" — which looks
+    # exactly like "bridge live but backend sees no objects". Pass
+    # --auto-post-interval 0 to opt out (manual "p" only).
+    if args.auto_post_interval is None:
+        args.auto_post_interval = 1.0 if (args.post and not args.once and not args.mock) else 0.0
+        if args.auto_post_interval and (args.show or args.serve_ui):
+            print(f"[live] --post set; auto-posting every {args.auto_post_interval:.1f}s "
+                  f"(pass --auto-post-interval 0 to disable).", file=sys.stderr)
 
     # Mock fallback: explicit, or graceful if OpenCV/camera is unavailable.
     if args.mock:

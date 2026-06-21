@@ -10,6 +10,7 @@ The backend owns truth: routes call the verification service, which is the only
 place can_open_work_order is computed. A client-supplied can_open_work_order is
 never read.
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
@@ -45,12 +46,20 @@ async def ppe_check(
         raise HTTPException(status_code=400, detail="Empty image upload.")
     image_path = _save_evidence(image_bytes)
 
+    cfg = ppe_service.get_config()
     try:
-        result = ppe_service.run_check(image_bytes)
+        # Bound the provider call so a slow/unreachable model can't hang the request.
+        result = await asyncio.wait_for(
+            asyncio.to_thread(ppe_service.run_check, image_bytes),
+            timeout=cfg["provider_timeout"],
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"PPE provider timed out after {cfg['provider_timeout']:.0f}s.",
+        )
     except ppe_service.PPEServiceError as e:
         raise HTTPException(status_code=502, detail=str(e))
-
-    cfg = ppe_service.get_config()
     created = datetime.now(timezone.utc)
     expires = created + timedelta(seconds=cfg["expiration_seconds"])
     created_iso, expires_iso = created.isoformat(), expires.isoformat()

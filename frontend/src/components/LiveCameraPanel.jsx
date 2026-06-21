@@ -143,12 +143,12 @@ export default function LiveCameraPanel({
         <pre className="cmd">{cmd}</pre>
       </div>
 
-      {/* Demo Mode fallback — simulator buttons (tools / final steps) */}
-      <h2 style={{ marginTop: 16 }}>Simulator fallback for tools / final steps</h2>
+      {/* Demo Mode fallback — simulator buttons (camera-less / final step) */}
+      <h2 style={{ marginTop: 16 }}>Simulator fallback (no camera)</h2>
       <div className="demo-note">
-        🧪 Mock evidence (no camera). Use these for the <strong>Tool 1</strong>{" "}
-        step and <strong>Finished → complete</strong>. Clicking one sets the source
-        to <strong>simulator</strong>.
+        🧪 Mock evidence for a camera-less run, or for the{" "}
+        <strong>Finished → complete</strong> step the camera can't see. Clicking
+        one sets the source to <strong>simulator</strong>.
       </div>
       {recLabel && (
         <div className="rec-hint">

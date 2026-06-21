@@ -13,13 +13,11 @@ import PPECheckModal from "./components/PPECheckModal.jsx";
 
 const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
 
-// Station is "ready" when the camera is online, the assembly zone is empty, and
-// both tools are home — i.e. the mock evidence shows a clean station.
+// Station is "ready" when the camera is online and the assembly zone is empty
+// — i.e. the evidence shows a clean station. BLOCKS ONLY (no tool checks).
 function zonesClear(objects) {
   if (!objects || objects.length === 0) return false;
   for (const o of objects) {
-    if (o.object === "tool_1" && o.zone !== "tool_1_home") return false;
-    if (o.object === "tool_2" && o.zone !== "tool_2_home") return false;
     if (PARTS.includes(o.object) && o.zone === "assembly_zone") return false;
   }
   return true;
@@ -35,15 +33,15 @@ function recommendedScenario(stepInfo, lastScenario) {
   switch (current_step) {
     case 1: return "step1_done";
     case 2: return "step2_done";
-    case 3: return lastScenario === "tool_1_removed_only" ? "tool_1_returned_only" : "tool_1_removed_only";
+    case 3: return "step3_done";
     case 4: return "step4_done";
     case 5: return "step5_done";
     default: return null;
   }
 }
 
-// Human "do this next" guidance per step (Part G). Distinguishes real-camera
-// block steps from simulator-only tool/finished steps.
+// Human "do this next" guidance per step (Part G). Steps 1-4 are real-camera
+// block moves; step 5 (finished assembly) uses the simulator.
 function recommendedAction(stepInfo) {
   if (!stepInfo) return "Place all blocks in their home zones, then check readiness.";
   const { status, current_step } = stepInfo;
@@ -51,11 +49,11 @@ function recommendedAction(stepInfo) {
   if (status === "awaiting_final_6s" || status === "completed")
     return "Return all objects home, then run the Final 6S check.";
   switch (current_step) {
-    case 1: return "📷 Use real camera: move the RED block into assembly_zone.";
+    case 1: return "📷 Use real camera: move the GREEN block into assembly_zone.";
     case 2: return "📷 Use real camera: move the BLUE block into assembly_zone.";
-    case 3: return "🧪 Use simulator: Tool 1 removed, then Tool 1 returned.";
+    case 3: return "📷 Use real camera: move the RED block into assembly_zone.";
     case 4: return "📷 Use real camera: move the YELLOW block into assembly_zone.";
-    case 5: return "🧪 Use simulator: Finished → complete.";
+    case 5: return "📷 Use real camera: move ALL four blocks into complete_zone.";
     default: return "";
   }
 }

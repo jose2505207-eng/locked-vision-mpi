@@ -1,6 +1,6 @@
 // Final 6S reset gate. The work order cannot close until the backend's
-// final-6s-check returns can_advance === true (all tools/parts home,
-// assembly clear, finished assembly in complete zone).
+// final-6s-check returns can_advance === true (assembly clear, finished
+// assembly in complete zone). Blocks-only demo — no tool checks.
 export default function Final6SCheckPanel({ visible, result, status, onCheck, busy }) {
   if (!visible) return null;
 
@@ -10,7 +10,7 @@ export default function Final6SCheckPanel({ visible, result, status, onCheck, bu
     <div className="panel">
       <h2>Final 6S — Station Reset</h2>
       <div className="meta" style={{ marginBottom: 10 }}>
-        Tools home · unused parts home · assembly zone clear · finished assembly in complete zone.
+        Assembly zone clear · finished assembly in complete zone.
       </div>
 
       <button

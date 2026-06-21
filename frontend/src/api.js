@@ -54,20 +54,24 @@ export const api = {
 
   // --- Safety-Glasses PPE verification ---
   ppeConfig: () => req("/api/ppe/config"),
-  ppeCheck: async (workOrderId, workerId, blob) => {
+  // `signal` lets the caller abort (modal close / client-side timeout). The
+  // backend now always answers 200 with a structured body, but we still parse
+  // any non-200 defensively so the UI never hangs.
+  ppeCheck: async (workOrderId, workerId, blob, signal) => {
     const fd = new FormData();
     fd.append("image", blob, "ppe.jpg");
     fd.append("work_order_id", workOrderId);
     fd.append("worker_id", workerId);
-    const res = await fetch(`${BASE}/api/ppe/check`, { method: "POST", body: fd });
+    const res = await fetch(`${BASE}/api/ppe/check`, { method: "POST", body: fd, signal });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (_) {}
     if (!res.ok) {
-      let detail = res.statusText;
-      try {
-        detail = (await res.json()).detail || detail;
-      } catch (_) {}
+      const detail = (body && (body.detail || body.reason)) || res.statusText;
       throw new Error(`${res.status}: ${detail}`);
     }
-    return res.json();
+    return body;
   },
   unlock: (workOrderId, workerId) =>
     req(`/api/work-orders/${workOrderId}/unlock`, {
@@ -82,16 +86,14 @@ export const VISION_URL =
   import.meta.env.VITE_VISION_URL || "http://localhost:8010";
 
 // Mock vision scenarios the operator/demo-driver can post (camera-less demo).
-// These names match vision/mock_vision_state.py.
+// These names match vision/mock_vision_state.py. BLOCKS ONLY (no tools).
 export const SCENARIOS = [
   { id: "station_ready", label: "Station ready (all home)" },
   { id: "wrong_sequence", label: "Wrong move (blue first)" },
-  { id: "step1_done", label: "Red → assembly" },
+  { id: "step1_done", label: "Green → assembly" },
   { id: "step2_done", label: "Blue → assembly" },
-  { id: "tool_1_removed_only", label: "Tool 1 removed (sim)" },
-  { id: "tool_1_returned_only", label: "Tool 1 returned (sim)" },
+  { id: "step3_done", label: "Red → assembly" },
   { id: "step4_done", label: "Yellow → assembly" },
-  { id: "step5_done", label: "Finished → complete (sim)" },
-  { id: "final_6s_tool_missing", label: "6S: tool missing" },
-  { id: "final_6s_pass", label: "6S: all home" },
+  { id: "step5_done", label: "All blocks → complete" },
+  { id: "final_6s_pass", label: "6S: assembly clear" },
 ];

@@ -3,8 +3,6 @@ const COLORS = {
   blue_block: "#2f81f7",
   yellow_block: "#f0c000",
   green_block: "#2ea043",
-  tool_1: "#b0b8c0",
-  tool_2: "#8b949e",
   finished_assembly: "#a371f7",
 };
 

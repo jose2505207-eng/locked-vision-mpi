@@ -34,6 +34,10 @@ from app.main import app  # noqa: E402
 client = TestClient(app)
 _IMG = ("snap.jpg", b"\xff\xd8\xff\xe0fakejpeg", "image/jpeg")
 
+# Derive from the single source of truth so the test follows the configured
+# demo sequence (currently red -> blue -> green -> yellow) instead of drifting.
+SEQ = safety_config.required_sequence()
+
 _results = []
 
 
@@ -64,7 +68,7 @@ def _submit(sid, color, extra=None):
 # 1. Start a verification session.
 def test_start_session():
     s = _start("WO-T1")
-    check("1. start session", s["expected_next_color"] == "green"
+    check("1. start session", s["expected_next_color"] == SEQ[0]
           and s["can_open_work_order"] is False and s["submitted_sequence"] == [])
 
 
@@ -72,7 +76,7 @@ def test_start_session():
 def test_correct_sequence():
     s = _start("WO-T2")
     sid = s["session_id"]
-    for c in ["green", "blue", "red", "yellow"]:
+    for c in SEQ:
         r = _submit(sid, c)
     check("2. correct sequence passes", r["accepted"] and r["sequence_passed"]
           and r["expected_next_color"] is None,
@@ -83,13 +87,13 @@ def test_correct_sequence():
 def test_wrong_order_caught():
     s = _start("WO-T3")
     sid = s["session_id"]
-    _submit(sid, "green")
-    r = _submit(sid, "red")  # expected blue
+    _submit(sid, SEQ[0])
+    r = _submit(sid, SEQ[2])  # expected SEQ[1] next; submit SEQ[2] out of order
     logged = client.get(f"/api/verification-sessions/{sid}/status").json()["errors"]
     check("3. wrong order rejected", (not r["accepted"]) and r["error_type"] == "wrong_block_order"
-          and r["expected_color"] == "blue" and r["received_color"] == "red"
+          and r["expected_color"] == SEQ[1] and r["received_color"] == SEQ[2]
           and r["can_open_work_order"] is False,
-          extra=r["message"])
+          extra=r.get("message", r.get("reason", "")))
     check("3b. wrong attempt audited", len(logged) >= 1 and logged[0]["error_type"] == "wrong_block_order")
 
 
@@ -97,7 +101,7 @@ def test_wrong_order_caught():
 def test_locked_without_ppe():
     s = _start("WO-T4")
     sid = s["session_id"]
-    for c in ["green", "blue", "red", "yellow"]:
+    for c in SEQ:
         _submit(sid, c)
     u = client.post("/api/work-orders/WO-T4/unlock").json()
     check("4. locked without PPE", u["unlocked"] is False
@@ -109,8 +113,8 @@ def test_locked_incomplete_sequence():
     s = _start("WO-T5")
     sid = s["session_id"]
     _ppe(sid, "pass")
-    _submit(sid, "green")
-    _submit(sid, "blue")
+    _submit(sid, SEQ[0])
+    _submit(sid, SEQ[1])
     u = client.post("/api/work-orders/WO-T5/unlock").json()
     check("5. locked with incomplete sequence", u["unlocked"] is False
           and "block_sequence" in u["missing_requirements"], extra=str(u["missing_requirements"]))
@@ -121,7 +125,7 @@ def test_unlock_when_both():
     s = _start("WO-T6")
     sid = s["session_id"]
     ppe = _ppe(sid, "pass")
-    for c in ["green", "blue", "red", "yellow"]:
+    for c in SEQ:
         last = _submit(sid, c)
     st = client.get(f"/api/verification-sessions/{sid}/status").json()
     u = client.post("/api/work-orders/WO-T6/unlock").json()
@@ -134,8 +138,9 @@ def test_unlock_when_both():
 def test_frontend_cannot_force():
     s = _start("WO-T7")
     sid = s["session_id"]
-    # Inject can_open_work_order + sequence_passed + accepted in the body with a WRONG color.
-    r = _submit(sid, "red", extra={"can_open_work_order": True, "sequence_passed": True, "accepted": True})
+    # Inject can_open_work_order + sequence_passed + accepted in the body with a WRONG color
+    # (SEQ[1] is out of order when SEQ[0] is expected first).
+    r = _submit(sid, SEQ[1], extra={"can_open_work_order": True, "sequence_passed": True, "accepted": True})
     u = client.post("/api/work-orders/WO-T7/unlock").json()
     check("7. cannot force can_open via payload",
           r["accepted"] is False and r["can_open_work_order"] is False and u["unlocked"] is False)

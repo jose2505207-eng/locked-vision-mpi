@@ -8,6 +8,8 @@ Endpoints (mounted under /api):
 The model is evidence only. The decision is made in ppe_service.decide(), the
 gate in safety_gate, and every check is written to the audit log + ppe_checks DB.
 """
+import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -18,6 +20,8 @@ from .audit_logger import AuditLogger
 from . import ppe_service, ppe_store
 
 router = APIRouter(prefix="/api", tags=["ppe"])
+
+log = logging.getLogger("ppe")
 
 EVIDENCE_DIR = os.path.join(os.path.dirname(__file__), "data", "ppe_evidence")
 _audit = AuditLogger()  # appends to the same audit_log.jsonl as the rest of the app
@@ -32,9 +36,12 @@ def ppe_config():
     cfg = ppe_service.get_config()
     return {
         "model_configured": ppe_service.model_configured(),
+        "provider": cfg["provider"],
+        "mock_mode": cfg["mock_mode"],
         "required": cfg["required"],
         "min_confidence": cfg["min_confidence"],
         "expiration_seconds": cfg["expiration_seconds"],
+        "provider_timeout": cfg["provider_timeout"],
         "positive_classes": sorted(ppe_service.POSITIVE_CLASSES),
         "negative_classes": sorted(ppe_service.NEGATIVE_CLASSES),
     }
@@ -55,24 +62,47 @@ async def ppe_check(
     work_order_id: str = Form(...),
     worker_id: str = Form(...),
 ):
-    """Run a safety-glasses check on a camera snapshot and store the evidence."""
+    """Run a safety-glasses check on a camera snapshot and store the evidence.
+
+    Always returns HTTP 200 with a structured body — `ok` tells the client
+    whether the check actually ran, `safety_glasses_verified` is the verdict.
+    The provider call is bounded by `provider_timeout` so a slow/unreachable
+    model can never leave the UI stuck on "Verifying…".
+    """
+    cfg = ppe_service.get_config()
     image_bytes = await image.read()
+    log.info(
+        "[PPE] /ppe/check hit wo=%s worker=%s bytes=%d provider=%s",
+        work_order_id, worker_id, len(image_bytes), cfg["provider"],
+    )
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty image upload.")
 
     image_path = _save_evidence(image_bytes)
 
+    timeout = cfg["provider_timeout"]
     try:
-        result = ppe_service.run_check(image_bytes)
-    except ppe_service.PPEServiceError as e:
-        # Model unreachable/misconfigured — record a failed (not verified) check.
-        _audit.log(
-            work_order_id, event="ppe-check", status="blocked",
-            message=f"PPE check error: {e}",
+        # Run the (blocking) provider call in a thread and cap it with a timeout.
+        result = await asyncio.wait_for(
+            asyncio.to_thread(ppe_service.run_check, image_bytes),
+            timeout=timeout,
         )
-        raise HTTPException(status_code=502, detail=str(e))
+        log.info(
+            "[PPE] result verified=%s confidence=%s mode=%s",
+            result["safety_glasses_verified"], result["confidence"], result.get("mode"),
+        )
+    except asyncio.TimeoutError:
+        reason = f"PPE provider timed out after {timeout:.0f}s. Check the model or use DEMO_MOCK_PPE=true."
+        log.error("[PPE] provider TIMEOUT after %ss (wo=%s)", timeout, work_order_id)
+        _audit.log(work_order_id, event="ppe-check", status="blocked", message=f"timeout: {reason}")
+        return _failure(work_order_id, worker_id, reason, error="timeout")
+    except ppe_service.PPEServiceError as e:
+        # Model unreachable/misconfigured — record a failed (not verified) check
+        # but still return 200 so the UI can show the reason and offer Retry.
+        log.error("[PPE] provider error (wo=%s): %s", work_order_id, e)
+        _audit.log(work_order_id, event="ppe-check", status="blocked", message=f"PPE check error: {e}")
+        return _failure(work_order_id, worker_id, str(e), error="provider_error")
 
-    cfg = ppe_service.get_config()
     created = datetime.now(timezone.utc)
     expires = created + timedelta(seconds=cfg["expiration_seconds"])
     created_iso, expires_iso = created.isoformat(), expires.isoformat()
@@ -97,14 +127,32 @@ async def ppe_check(
     )
 
     return {
+        "ok": True,
         "work_order_id": work_order_id,
         "worker_id": worker_id,
         "safety_glasses_verified": result["safety_glasses_verified"],
+        "verified": result["safety_glasses_verified"],
         "confidence": result["confidence"],
         "reason": result["reason"],
+        "mode": result.get("mode"),
         "expires_at": expires_iso,
         "created_at": created_iso,
         "predictions": result["predictions"],
+    }
+
+
+def _failure(work_order_id: str, worker_id: str, reason: str, *, error: str) -> dict:
+    """Structured (not-verified) PPE response used for timeouts and provider errors."""
+    return {
+        "ok": False,
+        "error": error,
+        "work_order_id": work_order_id,
+        "worker_id": worker_id,
+        "safety_glasses_verified": False,
+        "verified": False,
+        "confidence": None,
+        "reason": reason,
+        "predictions": [],
     }
 
 

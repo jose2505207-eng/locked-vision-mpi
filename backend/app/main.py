@@ -12,11 +12,23 @@ Built with mocked vision first: POST a vision state (or a named mock
 scenario) and the same endpoints work whether the evidence comes from
 mock_vision_state.py or a real camera.
 """
+import logging
 import os
 import sys
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+# Make our debug logs ("ppe" PPE checks, "mpi" step verification) visible under
+# uvicorn, which otherwise installs no INFO-level handler on the root logger.
+for _name in ("ppe", "mpi"):
+    _lg = logging.getLogger(_name)
+    if not _lg.handlers:
+        _h = logging.StreamHandler()
+        _h.setFormatter(logging.Formatter("%(levelname)s:%(name)s: %(message)s"))
+        _lg.addHandler(_h)
+        _lg.setLevel(logging.INFO)
+        _lg.propagate = False
 
 
 def _load_dotenv():
@@ -303,7 +315,7 @@ def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
             detected_objects=rt.latest_vision.get("objects", []),
         )
 
-    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt))
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt), all_steps=rt.steps)
     audit.log(
         work_order_id, event="validate-step", step=rt.current_step,
         status=result["status"], message=result["message"],
@@ -339,7 +351,7 @@ def advance(work_order_id: str, payload: dict = Body(default={})):
         )
 
     # Re-validate before advancing. This is the hard gate.
-    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt))
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt), all_steps=rt.steps)
     if not result["can_advance"]:
         audit.log(
             work_order_id, event="advance-blocked", step=rt.current_step,

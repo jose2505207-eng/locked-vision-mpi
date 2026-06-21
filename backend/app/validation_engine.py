@@ -4,7 +4,14 @@ The fake MES is the source of truth, the vision system provides evidence,
 and this engine decides whether the evidence satisfies the expected MPI step.
 It is intentionally pure: given a step definition, a vision state, and a
 mutable progress dict, it returns a result dict. No I/O, no flow control.
+
+Demo scope: BLOCKS ONLY. The active MPI sequence is red -> blue -> green ->
+yellow -> finished (see data/mpi_steps.json). No tool zones or tool steps are
+part of the verification path; station readiness checks blocks only.
 """
+import logging
+
+log = logging.getLogger("mpi")
 
 # Objects that count as "parts" for sequence / clear-zone checks.
 PART_NAMES = {
@@ -33,77 +40,107 @@ def _result(status, can_advance, message, objects):
     }
 
 
-def validate_step(step, vision_state, progress, already_placed=None):
-    """Validate the current step against the latest vision evidence.
+def _move_steps_to(all_steps, to_zone):
+    """Ordered list of block objects that 'move' steps place into `to_zone`."""
+    return [
+        s["object"] for s in (all_steps or [])
+        if s.get("type") == "move" and s.get("to_zone") == to_zone
+    ]
 
-    progress is mutated to track temporal conditions (e.g. a tool that must
-    leave its home and return). already_placed is the set of objects that
-    earlier steps legitimately left in the target zone, so they are not
-    mistaken for an out-of-sequence move.
+
+def validate_step(step, vision_state, progress, already_placed=None, all_steps=None):
+    """Validate the current step against the latest vision evidence — CUMULATIVELY.
+
+    Every step re-checks the FULL required state up to and including itself, not
+    just the current block. So if an earlier block is moved back out of the
+    assembly zone, a later step fails. `all_steps` is the full ordered step list
+    (the source of truth for what each step requires); it is derived from
+    mpi_steps.json, so the rules follow the configured sequence with no hardcoding.
     """
     objects = vision_state.get("objects", [])
-    already_placed = already_placed or set()
     stype = step["type"]
     step_no = step["step"]
 
     if stype == "move":
-        target = step["object"]
         to_zone = step["to_zone"]
-        zone = _zone_of(objects, target)
-        if zone == to_zone:
-            return _result(
-                "passed", True,
-                f"Step {step_no} passed: the {_h(target)} is in the {_h(to_zone)}.",
-                objects,
-            )
-        # Out-of-sequence detection: a different part is already in the target
-        # zone while the expected part is not. Makes the demo's "wrong move"
-        # moment unmistakable.
-        unexpected = [
-            o["object"] for o in objects
-            if o.get("zone") == to_zone and o["object"] != target
-            and o["object"] in PART_NAMES
-            and o["object"] not in already_placed
-        ]
-        if unexpected:
+        # Cumulative requirement: every block this MPI moves into `to_zone` at or
+        # before the current step must currently be in `to_zone`.
+        sequence = _move_steps_to(all_steps, to_zone)  # ordered: e.g. green,blue,red,yellow
+        required = [s["object"] for s in all_steps
+                    if s.get("type") == "move" and s.get("to_zone") == to_zone
+                    and s["step"] <= step_no]
+        not_yet = [s["object"] for s in all_steps
+                   if s.get("type") == "move" and s.get("to_zone") == to_zone
+                   and s["step"] > step_no]
+
+        missing = [o for o in required if _zone_of(objects, o) != to_zone]
+        too_early = [o for o in not_yet if _zone_of(objects, o) == to_zone]
+        inside = not missing and not too_early
+
+        log.info(
+            "[verify] step=%s required=%s not_yet=%s zone=%s detected=%s "
+            "missing=%s too_early=%s decision=%s",
+            step_no, required, not_yet, to_zone,
+            [(o.get("object"), o.get("zone")) for o in objects],
+            missing, too_early, "PASS" if inside else "BLOCK",
+        )
+
+        if too_early:
+            o = too_early[0]
             return _result(
                 "blocked", False,
-                f"Sequence blocked: expected {_h(target)} before {_h(unexpected[0])}. "
-                f"Remove the {_h(unexpected[0])} and move the {_h(target)} into the "
-                f"{_h(to_zone)}.",
+                f"Sequence blocked: {_h(o)} was placed too early — it must not be "
+                f"in the {_h(to_zone)} until its step. Remove it and place the "
+                f"required blocks in order ({', '.join(_h(b) for b in sequence)}).",
+                objects,
+            )
+        if missing:
+            # Distinguish "the block for THIS step isn't placed yet" from
+            # "an earlier block was moved back out" — both must fail.
+            current = step["object"]
+            if current in missing:
+                return _result(
+                    "blocked", False,
+                    f"Step blocked: move the {_h(current)} into the {_h(to_zone)}.",
+                    objects,
+                )
+            return _result(
+                "blocked", False,
+                f"Step blocked: {_h(missing[0])} must still be in the {_h(to_zone)} "
+                f"(an earlier block was moved out).",
                 objects,
             )
         return _result(
-            "blocked", False,
-            f"Step blocked: move the {_h(target)} into the {_h(to_zone)}.",
+            "passed", True,
+            f"Step {step_no} passed: {', '.join(_h(o) for o in required)} in the {_h(to_zone)}.",
             objects,
         )
 
-    if stype == "tool_use":
-        tool = step["object"]
-        home = step["home_zone"]
-        zone = _zone_of(objects, tool)
-        removed_key = f"tool_removed_step_{step_no}"
-        if zone != home:
-            # The tool has left its home — record it and wait for the return.
-            progress[removed_key] = True
+    if stype == "move_all":
+        # Final block step: ALL listed blocks must be in `to_zone` (e.g. every
+        # block in complete_zone). No synthetic 'finished_assembly' object — the
+        # real block detections are the only source of truth.
+        to_zone = step["to_zone"]
+        required = list(step.get("objects", []))
+        missing = [o for o in required if _zone_of(objects, o) != to_zone]
+        inside = not missing
+        log.info(
+            "[verify] step=%s move_all required=%s zone=%s detected=%s missing=%s decision=%s",
+            step_no, required, to_zone,
+            [(o.get("object"), o.get("zone")) for o in objects],
+            missing, "PASS" if inside else "BLOCK",
+        )
+        if missing:
             return _result(
                 "blocked", False,
-                f"Step blocked: {_h(tool)} is out of its home. Return {_h(tool)} "
-                f"to {_h(home)} to finish step {step_no}.",
-                objects,
-            )
-        if progress.get(removed_key):
-            return _result(
-                "passed", True,
-                f"Step {step_no} passed: {_h(tool)} was used and returned to "
-                f"{_h(home)}.",
+                f"Step blocked: move ALL blocks to the {_h(to_zone)} — still "
+                f"missing {', '.join(_h(o) for o in missing)}.",
                 objects,
             )
         return _result(
-            "blocked", False,
-            f"Step blocked: pick up {_h(tool)} to use it, then return it to "
-            f"{_h(home)}.",
+            "passed", True,
+            f"Step {step_no} passed: all blocks ({', '.join(_h(o) for o in required)}) "
+            f"in the {_h(to_zone)}.",
             objects,
         )
 
@@ -154,25 +191,24 @@ def validate_final_6s(final_cfg, vision_state):
     )
 
 
-# Home zones used for the pre-start station-readiness check.
+# Home zones used for the pre-start station-readiness check. BLOCKS ONLY —
+# tools are not part of this demo and are never required for readiness.
 READINESS_HOMES = {
     "red_block": "red_home",
     "blue_block": "blue_home",
     "yellow_block": "yellow_home",
     "green_block": "green_home",
-    "tool_1": "tool_1_home",
-    "tool_2": "tool_2_home",
 }
 REQUIRED_BLOCKS = ["red_block", "blue_block", "yellow_block", "green_block"]
 CLEAR_BEFORE_START = ["assembly_zone", "complete_zone"]
 
 
 def validate_readiness(vision_state):
-    """Pre-start gate: all blocks home, work zones clear, tools home if seen.
+    """Pre-start gate: all blocks home and work zones clear. BLOCKS ONLY.
 
-    Hybrid-friendly: blocks must be present and home (the camera sees them);
-    tools are only flagged if they appear in evidence and are out of place
-    (the camera may not detect tools, so simulator state fills that in).
+    The camera sees the four colored blocks; readiness requires each to be in
+    its home zone and the assembly/complete zones clear. Tools are intentionally
+    ignored — they are not part of this demo.
     """
     objects = vision_state.get("objects", [])
     if not objects:
@@ -193,16 +229,6 @@ def validate_readiness(vision_state):
         if actual != expected:
             wrong.append({
                 "object": obj, "expected_zone": expected, "actual_zone": actual,
-            })
-
-    # Tools: only flag if present and out of place (camera may not see them).
-    for tool in ["tool_1", "tool_2"]:
-        present = any(o.get("object") == tool for o in objects)
-        actual = _zone_of(objects, tool)
-        expected = READINESS_HOMES[tool]
-        if present and actual != expected:
-            wrong.append({
-                "object": tool, "expected_zone": expected, "actual_zone": actual,
             })
 
     # Work zones must be clear of parts before starting.
