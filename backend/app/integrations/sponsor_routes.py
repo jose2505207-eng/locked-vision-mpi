@@ -8,7 +8,7 @@ changes a validation decision.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 from . import sponsor_flags
 
@@ -59,3 +59,24 @@ def sponsors_test_error():
     if not sponsor_flags.active("sentry"):
         raise HTTPException(status_code=409, detail="Sentry is inactive — nothing to test.")
     raise RuntimeError("Locked Vision MPI — Sentry test error (intentional, safe).")
+
+
+# --- Claude operator assistant (advisory; never decides pass/fail) -----------
+
+@router.post("/assistant/operator-instruction")
+def operator_instruction(payload: dict = Body(default={})):
+    """Turn a structured step state into one short operator instruction.
+
+    Claude only EXPLAINS the backend's verdict. With the flag off or no key, a
+    deterministic local fallback is returned (source='fallback').
+    """
+    from . import claude_assistant
+    return claude_assistant.operator_instruction(payload or {})
+
+
+@router.post("/assistant/audit-summary")
+def audit_summary(payload: dict = Body(default={})):
+    """Summarize an audit-log entry list (advisory)."""
+    from . import claude_assistant
+    entries = (payload or {}).get("entries", [])
+    return claude_assistant.audit_summary(entries)
