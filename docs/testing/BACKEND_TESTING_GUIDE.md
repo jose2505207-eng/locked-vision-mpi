@@ -1,5 +1,8 @@
 # Backend Testing Guide
 
+> Part of the two-role handoff — see
+> [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).
+
 ## Run the backend locally
 
 ```bash

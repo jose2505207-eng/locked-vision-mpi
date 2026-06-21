@@ -1,5 +1,9 @@
 # Environment Variables
 
+> Part of the two-role handoff — see
+> [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).
+> The Sponsor Integration Role owns the PPE provider variables below.
+
 Copy `.env.example` to `.env` and fill in only what you use. The core demo and the
 verification workflow run with **none** of these set (PPE falls back to a clearly
 labeled mock).

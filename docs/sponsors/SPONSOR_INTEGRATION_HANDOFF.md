@@ -83,3 +83,50 @@ See `docs/setup/ENVIRONMENT_VARIABLES.md`. PPE-relevant:
 - [ ] Absent key → clean labeled mock, never a silent production "pass".
 - [ ] Backend `decide()` unchanged; `can_open_work_order` still backend-only.
 - [ ] Frontend contract unchanged.
+
+## Sponsor Integration Agent Loop
+
+**LOOP 2: Sponsor PPE Provider Loop**
+
+1. **Choose provider**
+   - Confirm `PPE_MODEL_PROVIDER`.
+   - Confirm whether using Roboflow or another sponsor/model API.
+   - Confirm the required env vars.
+
+2. **Configure credentials**
+   - Add/update `.env.example`.
+   - Document real env vars in `docs/setup/ENVIRONMENT_VARIABLES.md`.
+   - Never commit secrets.
+
+3. **Implement provider call**
+   - Add the real call in `ppe_service.py` or a provider-specific module.
+   - Send the image/snapshot to the provider.
+   - Receive the prediction/evidence response.
+   - Normalize the response into the backend format
+     (`[{ "class", "confidence", "x", "y", "width", "height" }]`).
+
+4. **Map labels**
+   - Positive PPE labels may include: `goggles`, `safety_glasses`,
+     `safety-glasses`, `glasses`, `eye_protection`.
+   - Negative/missing PPE labels may include: `no_goggles`, `no-safety-glasses`,
+     `missing_goggles`, `missing_eye_protection`.
+
+5. **Decision remains backend-owned**
+   - The provider returns evidence.
+   - `ppe_service.decide()` applies the thresholds/policy.
+   - `verification_session_service.py` computes `can_open_work_order`.
+   - The provider must **never** return final unlock permission.
+
+6. **Test real provider or labeled mock mode**
+   - Confirm the PPE **pass** case.
+   - Confirm the PPE **fail** case.
+   - Confirm **expired** PPE keeps the WO locked.
+   - Confirm **full sequence + valid PPE** unlocks the WO.
+   - Confirm a **wrong block** is still logged and rejected.
+
+**Success condition** — the loop is complete only when: a real provider/sponsor
+integration is wired cleanly, env vars are documented, provider output is
+normalized, the backend remains the final decision-maker, and tests or manual
+verification prove **no hardcoded unlock** exists.
+
+See also: [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).

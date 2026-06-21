@@ -194,3 +194,42 @@ Blocked (HTTP 200, read the body — not the status code):
 - ❌ Don't compute PPE/sequence pass in the browser.
 - ❌ Don't send `can_open_work_order` / `accepted` to force state (ignored).
 - ❌ Don't block wrong submissions locally — let the backend catch them.
+
+## Frontend Agent Loop
+
+**LOOP 1: Frontend Verification Loop**
+
+1. **Start session**
+   - Call `POST /api/verification-sessions/start`.
+   - Store `session_id`.
+   - Display **WO locked**.
+
+2. **PPE check**
+   - Capture a camera snapshot.
+   - Call `POST /api/verification-sessions/{id}/ppe-check`.
+   - Display `ppe_verified`, `confidence`, `reason`, `expires_at`.
+   - If `mode` is `mock`, show a **DEV/MOCK** badge.
+
+3. **Block sequence submission**
+   - Operator submits/scans/selects a block color.
+   - Frontend sends the submitted color to
+     `POST /api/verification-sessions/{id}/blocks/submit`.
+   - Do **not** block wrong local actions.
+   - Display the backend response clearly enough for the operator to understand.
+
+4. **Status refresh**
+   - Call `GET /api/verification-sessions/{id}/status`.
+   - Show `expected_next_color`, `submitted_sequence`, `sequence_passed`,
+     and `can_open_work_order`.
+
+5. **Unlock attempt**
+   - Enable **Open Work Order** only if `can_open_work_order` is `true`.
+   - Call `POST /api/work-orders/{id}/unlock`.
+   - Display the backend result.
+
+**Success condition** — the loop is complete only when the frontend:
+uses the session endpoints, displays backend errors, sends wrong actions to the
+backend instead of preventing them locally, and enables the WO only from backend
+`can_open_work_order: true`.
+
+See also: [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).
