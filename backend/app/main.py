@@ -18,6 +18,29 @@ import sys
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+
+def _load_dotenv():
+    """Load repo-root .env into the environment if present (dependency-free).
+
+    Lets `uvicorn app.main:app` pick up secrets like ROBOFLOW_API_KEY without an
+    --env-file flag. Already-set environment variables always win over the file.
+    """
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    path = os.path.join(root, ".env")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
 from .audit_logger import AuditLogger
 from .fake_mes_service import FakeMESService
 from .models import StepResponse, ValidationResponse, WorkOrderSummary

@@ -43,9 +43,34 @@ labeled mock).
 | `ANTHROPIC_API_KEY` | _(empty)_ | Optional audit-log explanations. |
 | `MES_BACKEND_URL` | `http://localhost:8000` | Fetch agent → backend. |
 
+## How `.env` is loaded
+
+`backend/app/main.py` auto-loads the repo-root `.env` at startup (a small,
+dependency-free loader), so `uvicorn app.main:app` picks up secrets like
+`ROBOFLOW_API_KEY` **without** needing an `--env-file` flag. Real environment
+variables always win over the file (the loader uses `setdefault`). Edit `.env`,
+restart the backend, and the new values apply.
+
+```bash
+cp .env.example .env          # then fill in your keys
+cd backend && uvicorn app.main:app --reload --port 8000
+```
+
+## Going live with Roboflow
+
+Live PPE requires **both** values:
+
+```env
+ROBOFLOW_API_KEY=...            # your Roboflow private API key
+ROBOFLOW_PPE_MODEL_ID=...       # e.g. workspace/ppe-detection/3
+```
+
+With only the key set, the provider auto-resolves to **mock** (graceful) instead
+of erroring. Set the model id to flip to live (`mode: "live"` in responses).
+
 ## Where they're read
 
 - PPE/sequence config: `backend/app/safety_config.py` (`ppe_config()` and
   `REQUIRED_BLOCK_SEQUENCE`). This is the single source — re-read per request, so
   editing `.env` and restarting is enough.
-- Secrets live in `.env` (gitignored). Never commit real keys.
+- Secrets live in `.env` (gitignored). **Never commit real keys.**
