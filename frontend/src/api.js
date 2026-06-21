@@ -52,6 +52,9 @@ export const api = {
     }),
   resetDemo: () => req(`/demo/reset`, { method: "POST" }),
 
+  // Sponsor stack (shadow) — status badges only; never affects validation.
+  sponsorsStatus: () => req("/api/sponsors/status"),
+
   // --- Safety-Glasses PPE verification ---
   ppeConfig: () => req("/api/ppe/config"),
   // `signal` lets the caller abort (modal close / client-side timeout). The

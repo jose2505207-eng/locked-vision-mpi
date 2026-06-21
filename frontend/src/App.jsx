@@ -10,6 +10,7 @@ import AuditLogPanel from "./components/AuditLogPanel.jsx";
 import Final6SCheckPanel from "./components/Final6SCheckPanel.jsx";
 import HowToUseCameraPanel from "./components/HowToUseCameraPanel.jsx";
 import PPECheckModal from "./components/PPECheckModal.jsx";
+import SponsorPanel from "./components/SponsorPanel.jsx";
 
 const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
 
@@ -317,6 +318,7 @@ export default function App() {
             recommendedAction={recommendedAction(stepInfo)}
           />
           <AuditLogPanel entries={audit} />
+          <SponsorPanel />
         </div>
       </div>
 
