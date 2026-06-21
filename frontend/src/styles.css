@@ -258,6 +258,61 @@ pre.cmd {
 .sixs-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 15px; }
 .checklist { margin: 10px 0; }
 
+/* PPE Safety-Glasses modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(2, 5, 10, 0.78);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+  backdrop-filter: blur(3px);
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px; width: 460px; max-width: calc(100vw - 32px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.ppe-head { display: flex; align-items: baseline; justify-content: space-between; }
+.ppe-head h2 { margin: 0; font-size: 20px; letter-spacing: 0.3px; text-transform: none; color: var(--text); }
+.ppe-wo { color: var(--accent); font-weight: 800; font-size: 14px; }
+.ppe-sub { color: var(--muted); font-size: 13px; margin: 6px 0 14px; line-height: 1.4; }
+
+.ppe-camera {
+  position: relative; background: #05070a; border: 2px solid var(--line);
+  border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3;
+  display: flex; align-items: center; justify-content: center;
+}
+.ppe-camera.ok { border-color: var(--pass); box-shadow: 0 0 0 2px rgba(46,160,67,0.35); }
+.ppe-camera.bad { border-color: var(--block); box-shadow: 0 0 0 2px rgba(248,81,73,0.35); }
+.ppe-camera video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ppe-camerr { position: absolute; color: var(--muted); font-size: 13px; padding: 0 20px; text-align: center; }
+.ppe-stamp {
+  position: absolute; top: 10px; right: 10px; font-weight: 900; font-size: 14px;
+  padding: 4px 10px; border-radius: 6px; letter-spacing: 0.5px;
+}
+.ppe-stamp.ok { background: var(--pass-bg); color: var(--pass); border: 1px solid var(--pass); }
+.ppe-stamp.bad { background: var(--block-bg); color: #ffd7d5; border: 1px solid var(--block); }
+
+.ppe-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.ppe-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppe-input {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font: inherit;
+}
+.ppe-note {
+  background: #2a2300; border: 1px dashed var(--accent); color: var(--muted);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 12px 0;
+}
+.ppe-note code, .ppe-modal code { color: var(--accent); }
+.ppe-result { margin-top: 12px; }
+.ppe-meta { color: var(--muted); font-size: 12px; margin-top: 4px; font-weight: 500; }
+.ppe-err { margin-top: 12px; font-size: 14px; }
+
+.ppe-actions { display: flex; gap: 10px; margin-top: 18px; }
+.btn-ghost { background: transparent; }
+.btn-open {
+  flex: 1; font-weight: 800; font-size: 15px; padding: 12px;
+}
+.btn-open.enabled { background: var(--pass); border-color: var(--pass); color: #04210e; }
+.btn-open.disabled { background: #21262d; border-color: var(--line); color: var(--muted); }
+
 /* Station readiness per-object breakdown */
 .ready-objs { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 .ro-ok { color: var(--pass); font-weight: 700; font-size: 13px; }

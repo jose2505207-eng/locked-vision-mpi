@@ -27,6 +27,10 @@ vision/color_ranges.local.json
 # Runtime audit log (regenerated). Comment out if you want to commit demo runs.
 backend/app/data/audit_log.jsonl
 
+# PPE check evidence (snapshots) + local SQLite DB
+backend/app/data/ppe_evidence/
+backend/app/data/ppe_checks.db
+
 # OS / editor
 .DS_Store
 .idea/

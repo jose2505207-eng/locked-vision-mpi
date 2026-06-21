@@ -9,6 +9,7 @@ import ErrorBanner from "./components/ErrorBanner.jsx";
 import AuditLogPanel from "./components/AuditLogPanel.jsx";
 import Final6SCheckPanel from "./components/Final6SCheckPanel.jsx";
 import HowToUseCameraPanel from "./components/HowToUseCameraPanel.jsx";
+import PPECheckModal from "./components/PPECheckModal.jsx";
 
 const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
 
@@ -75,6 +76,8 @@ export default function App() {
     updated_at: null,
   });
   const [readiness, setReadiness] = useState(null);
+  const [ppeConfig, setPpeConfig] = useState(null);
+  const [ppePendingWO, setPpePendingWO] = useState(null); // WO awaiting PPE gate
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -105,6 +108,7 @@ export default function App() {
         if (list.length) setSelectedId(list[0].work_order_id);
       })
       .catch((e) => setError(String(e)));
+    api.ppeConfig().then(setPpeConfig).catch(() => setPpeConfig({ model_configured: false }));
   }, []);
 
   useEffect(() => {
@@ -159,8 +163,16 @@ export default function App() {
     }
   }
 
-  const onStart = (id) =>
+  // Clicking Start opens the Safety-Glasses gate first; the modal calls
+  // doStart() only after the backend verifies (or in demo mode).
+  const onStart = (id) => {
+    setSelectedId(id);
+    setPpePendingWO(workOrders.find((w) => w.work_order_id === id) || { work_order_id: id });
+  };
+
+  const doStart = (id) =>
     guard(async () => {
+      setPpePendingWO(null);
       await api.start(id);
       setValidation(null);
       setSixSResult(null);
@@ -309,6 +321,15 @@ export default function App() {
           <AuditLogPanel entries={audit} />
         </div>
       </div>
+
+      {ppePendingWO && (
+        <PPECheckModal
+          workOrder={ppePendingWO}
+          config={ppeConfig}
+          onCancel={() => setPpePendingWO(null)}
+          onOpened={doStart}
+        />
+      )}
     </div>
   );
 }

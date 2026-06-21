@@ -165,6 +165,31 @@ docker compose up
 cd backend && .venv/bin/python smoke_test.py   # runs the full WO-1001 flow
 ```
 
+## Safety-Glasses PPE gate (optional)
+
+Before a work order opens, the operator can be required to verify they're wearing
+safety glasses. A browser snapshot is sent to a hosted PPE model (Roboflow), but
+**the backend decides** — the model is only evidence.
+
+```bash
+# .env (see .env.example)
+ROBOFLOW_API_KEY=...                 # required to call the real model
+ROBOFLOW_PPE_MODEL_ID=ppe-detection/3
+PPE_MIN_CONFIDENCE=0.72              # backend threshold
+PPE_CHECK_EXPIRATION_SECONDS=20     # a check is only valid this long
+PPE_REQUIRED=false                  # true = block work-order start until verified
+```
+
+Flow: click **Start** → the **Safety Glasses** modal opens → camera preview →
+**Verify Safety Glasses** → backend runs the model + decides → on success the
+**Open Work Order** button unlocks (with confidence % + timestamp). Without a
+model key the modal runs in a clearly-labeled **demo mode** (verification skipped,
+never faked). Every check is written to the audit log and a `ppe_checks` SQLite
+table.
+
+Endpoints: `GET /api/ppe/config` · `POST /api/ppe/check` (image + work_order_id +
+worker_id) · `POST /api/work-orders/{id}/unlock` (403 until verified).
+
 ## Demo flow (4 moments)
 
 1. **Station readiness passes** — post `station_ready`; readiness goes green.

@@ -1,5 +1,7 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 pydantic==2.7.4
+python-multipart==0.0.9   # required for PPE image upload (multipart/form-data)
+requests==2.32.3          # PPE service -> Roboflow hosted inference
 # Optional sponsor integration (only used if SENTRY_DSN is set):
 # sentry-sdk==2.7.1

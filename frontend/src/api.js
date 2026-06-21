@@ -51,6 +51,29 @@ export const api = {
       body: JSON.stringify(body),
     }),
   resetDemo: () => req(`/demo/reset`, { method: "POST" }),
+
+  // --- Safety-Glasses PPE verification ---
+  ppeConfig: () => req("/api/ppe/config"),
+  ppeCheck: async (workOrderId, workerId, blob) => {
+    const fd = new FormData();
+    fd.append("image", blob, "ppe.jpg");
+    fd.append("work_order_id", workOrderId);
+    fd.append("worker_id", workerId);
+    const res = await fetch(`${BASE}/api/ppe/check`, { method: "POST", body: fd });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch (_) {}
+      throw new Error(`${res.status}: ${detail}`);
+    }
+    return res.json();
+  },
+  unlock: (workOrderId, workerId) =>
+    req(`/api/work-orders/${workOrderId}/unlock`, {
+      method: "POST",
+      body: JSON.stringify({ worker_id: workerId }),
+    }),
 };
 
 // Base URL of the Python vision bridge's UI server (--serve-ui). The browser

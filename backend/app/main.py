@@ -22,6 +22,9 @@ from .audit_logger import AuditLogger
 from .fake_mes_service import FakeMESService
 from .models import StepResponse, ValidationResponse, WorkOrderSummary
 from .mpi_state_machine import MPIStateMachine
+from .ppe_routes import router as ppe_router
+from .verification_routes import router as verification_router
+from . import ppe_service, verification_session_service
 from .validation_engine import validate_final_6s, validate_readiness, validate_step
 
 # --- Optional mock vision scenarios (single source of truth in vision/) ------
@@ -58,6 +61,11 @@ app.add_middleware(
 mes = FakeMESService()
 sm = MPIStateMachine(mes)
 audit = AuditLogger()
+
+# Safety-Glasses PPE check (/api/ppe/*) and the combined verification-session
+# workflow (/api/verification-sessions/*, /api/work-orders/*/unlock).
+app.include_router(ppe_router)
+app.include_router(verification_router)
 
 
 # --- helpers -----------------------------------------------------------------
@@ -150,6 +158,16 @@ def list_work_orders():
 @app.post("/work-orders/{work_order_id}/start", response_model=StepResponse)
 def start_work_order(work_order_id: str):
     _require_rt(work_order_id)
+    # Safety gate: when PPE enforcement is enabled, the latest verification
+    # session for this work order must pass BOTH PPE and the block sequence
+    # before it can start. Off by default so the camera-less mock demo is
+    # unaffected.
+    if ppe_service.get_config()["required"]:
+        if not verification_session_service.latest_session_can_open(work_order_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Work Order locked: complete PPE + block-sequence verification first.",
+            )
     rt = sm.start(work_order_id)
     step = sm.current_step_def(work_order_id)
     audit.log(
