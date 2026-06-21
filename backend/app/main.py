@@ -81,14 +81,9 @@ try:
 except Exception:  # pragma: no cover - mock module is optional at runtime
     build_mock_state = None
 
-# --- Optional Sentry monitoring (sponsor track, isolated) --------------------
-if os.getenv("SENTRY_DSN"):
-    try:
-        import sentry_sdk
-
-        sentry_sdk.init(dsn=os.getenv("SENTRY_DSN"), traces_sample_rate=0.2)
-    except Exception:
-        pass
+# --- Sentry monitoring (sponsor stack, flag-gated, fail-soft) ----------------
+from .integrations.sentry_setup import init_sentry
+init_sentry()
 
 app = FastAPI(title="Locked Vision MPI — Fake MES", version="0.1.0")
 

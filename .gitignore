@@ -14,6 +14,7 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+!.env.sponsor.example
 
 # Vision — generated camera/test artifacts (keep folder structure via .gitkeep)
 vision/snapshots/*.jpg
