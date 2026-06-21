@@ -34,7 +34,9 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Make sibling modules importable whether run from repo root or vision/.
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,10 +60,19 @@ DRAW_BGR = {
 # --- zone helpers ------------------------------------------------------------
 
 def load_zones_and_view(path=ZONES_PATH):
-    """Load zones plus the golden-view dimensions they were defined against."""
+    """Load zones plus the frame size they were defined against.
+
+    Supports both formats: the calibrator's {"frame_width","frame_height",...}
+    and the original {"golden_view": {"width","height"}}. Zones are then scaled
+    from this reference size to the live frame, so a station calibrated with
+    zone_calibrator.py lines up regardless of the run-time capture resolution.
+    """
     with open(path) as f:
         data = json.load(f)
-    gv = data.get("golden_view", {"width": 1280, "height": 720})
+    if "frame_width" in data and "frame_height" in data:
+        gv = {"width": data["frame_width"], "height": data["frame_height"]}
+    else:
+        gv = data.get("golden_view", {"width": 1280, "height": 720})
     return data["zones"], gv
 
 
@@ -78,9 +89,20 @@ def scale_zones(zones, golden_view, frame_w, frame_h):
 # --- state ------------------------------------------------------------------
 
 def build_vision_state(detections, zones, source="camera", camera_locked=True):
-    """Wrap mapped detections in the backend-ready shape, incl. camera_locked."""
+    """Wrap mapped detections in the backend-ready shape, incl. camera_locked.
+
+    Each object is tagged with its source ("camera") so the backend can merge
+    hybrid evidence (camera blocks + simulator tools) per object.
+    """
     mapped = map_detections(detections, zones=zones, source=source)
+    for o in mapped["objects"]:
+        o["source"] = source
     return {"camera_locked": camera_locked, **mapped}
+
+
+def _now_iso():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 def objects_summary(state):
@@ -143,6 +165,87 @@ def post_state(base_url, work_order_id, state):
     resp = requests.post(url, json=body, timeout=5)
     resp.raise_for_status()
     return resp.json()
+
+
+# --- UI feed server (Part A) -------------------------------------------------
+# A tiny stdlib HTTP server so the React app can show the annotated feed WITHOUT
+# the browser ever opening the webcam. Python/OpenCV stays the camera owner.
+
+class _Shared:
+    """Thread-safe holder for the latest annotated JPEG + vision state."""
+    def __init__(self, camera_index):
+        self.lock = threading.Lock()
+        self.frame_jpeg = None
+        self.state = {"source": "camera", "camera_locked": False, "objects": [], "updated_at": None}
+        self.camera_index = camera_index
+        self.camera_locked = False
+
+    def update(self, frame_jpeg, state):
+        with self.lock:
+            self.frame_jpeg = frame_jpeg
+            self.state = state
+            self.camera_locked = bool(state.get("camera_locked"))
+
+    def snapshot(self):
+        with self.lock:
+            return self.frame_jpeg, dict(self.state)
+
+
+def _make_handler(shared):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):  # keep the terminal clean
+            pass
+
+        def _send(self, code, content_type, body):
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Access-Control-Allow-Origin", "*")  # allow :5173
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            if path == "/health":
+                body = json.dumps({
+                    "status": "ok",
+                    "camera_index": shared.camera_index,
+                    "camera_locked": shared.camera_locked,
+                }).encode()
+                self._send(200, "application/json", body)
+            elif path == "/latest-state":
+                _, state = shared.snapshot()
+                self._send(200, "application/json", json.dumps(state).encode())
+            elif path == "/latest-frame.jpg":
+                frame, _ = shared.snapshot()
+                if frame is None:
+                    self._send(503, "text/plain", b"no frame yet")
+                else:
+                    self._send(200, "image/jpeg", frame)
+            elif path == "/video.mjpg":
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    while True:
+                        frame, _ = shared.snapshot()
+                        if frame:
+                            self.wfile.write(
+                                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+                            )
+                        time.sleep(0.1)
+                except Exception:
+                    return
+            else:
+                self._send(404, "text/plain", b"not found")
+    return Handler
+
+
+def start_ui_server(shared, port):
+    httpd = ThreadingHTTPServer(("0.0.0.0", port), _make_handler(shared))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
 
 
 # --- mock fallback -----------------------------------------------------------
@@ -210,8 +313,22 @@ def run_once(args, zones_gv, golden_view):
 def run_live(args, zones_gv, golden_view):
     import cv2
     cap = _open_camera(args.device)
-    print("[live] q=quit  s=snapshot  p=post-to-backend", file=sys.stderr)
+
+    # Optional UI feed server (Part A) + auto-post (Part C).
+    shared = _Shared(args.device)
+    httpd = None
+    if args.serve_ui:
+        httpd = start_ui_server(shared, args.vision_port)
+        print(f"[ui] serving feed on http://localhost:{args.vision_port} "
+              f"(/health /latest-state /latest-frame.jpg /video.mjpg)", file=sys.stderr)
+    auto = args.auto_post_interval or 0.0
+    if args.show:
+        print("[live] q=quit  s=snapshot  p=post-to-backend", file=sys.stderr)
+    if auto > 0 and args.post:
+        print(f"[live] auto-posting every {auto:.1f}s -> {args.post} ({args.wo})", file=sys.stderr)
+
     last_summary = None
+    last_post = 0.0
     try:
         while True:
             ok, frame = cap.read()
@@ -222,6 +339,7 @@ def run_live(args, zones_gv, golden_view):
             zones = scale_zones(zones_gv, golden_view, w, h)
             detections = detect_blocks(frame)
             state = build_vision_state(detections, zones, camera_locked=True)
+            annotated = annotate(frame, state, zones)
 
             # Print only when the detection set changes (keeps the log readable).
             summary = objects_summary(state)
@@ -229,23 +347,52 @@ def run_live(args, zones_gv, golden_view):
                 print(f"[live] {summary}", file=sys.stderr)
                 last_summary = summary
 
-            annotated = annotate(frame, state, zones)
-            cv2.imshow("Locked Vision MPI - vision debug", annotated)
+            # Publish the annotated frame + state to the UI server.
+            if args.serve_ui:
+                ok_jpg, buf = cv2.imencode(".jpg", annotated)
+                ui_state = {
+                    "source": "camera",
+                    "camera_locked": True,
+                    "objects": state["objects"],
+                    "updated_at": _now_iso(),
+                }
+                if ok_jpg:
+                    shared.update(buf.tobytes(), ui_state)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                break
-            if key == ord("s"):
-                print(f"[live] saved -> {save_snapshot(annotated)}", file=sys.stderr)
-            if key == ord("p"):
-                if args.post:
-                    print(f"[live] posted -> {post_state(args.post, args.wo, state)}",
-                          file=sys.stderr)
-                else:
-                    print("[live] no --post URL set", file=sys.stderr)
+            # Auto-post on the interval.
+            now = time.time()
+            if auto > 0 and args.post and (now - last_post) >= auto:
+                try:
+                    post_state(args.post, args.wo, state)
+                    last_post = now
+                except Exception as e:
+                    print(f"[live] auto-post failed: {e}", file=sys.stderr)
+                    last_post = now  # back off one interval
+
+            if args.show:
+                cv2.imshow("Locked Vision MPI - vision debug", annotated)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    break
+                if key == ord("s"):
+                    print(f"[live] saved -> {save_snapshot(annotated)}", file=sys.stderr)
+                if key == ord("p"):
+                    if args.post:
+                        print(f"[live] posted -> {post_state(args.post, args.wo, state)}",
+                              file=sys.stderr)
+                    else:
+                        print("[live] no --post URL set", file=sys.stderr)
+            else:
+                # Headless (--serve-ui only): ~30 fps, Ctrl+C to quit.
+                time.sleep(0.03)
+    except KeyboardInterrupt:
+        pass
     finally:
         cap.release()
-        cv2.destroyAllWindows()
+        if args.show:
+            cv2.destroyAllWindows()
+        if httpd is not None:
+            httpd.shutdown()
     return 0
 
 
@@ -263,6 +410,12 @@ def main():
     ap.add_argument("--post", metavar="URL",
                     help="Backend base URL to POST vision state to (e.g. http://localhost:8000).")
     ap.add_argument("--wo", default="WO-1001", help="Work order id for --post (default WO-1001).")
+    ap.add_argument("--serve-ui", action="store_true",
+                    help="Serve the annotated feed over HTTP for the React UI.")
+    ap.add_argument("--vision-port", type=int, default=8010,
+                    help="Port for the UI feed server (default 8010).")
+    ap.add_argument("--auto-post-interval", type=float, default=0.0,
+                    help="Seconds between automatic posts to --post (0 = off).")
     args = ap.parse_args()
 
     # Mock fallback: explicit, or graceful if OpenCV/camera is unavailable.
@@ -271,9 +424,9 @@ def main():
 
     try:
         zones_gv, golden_view = load_zones_and_view()
-        if args.show:
+        if args.show or args.serve_ui:
             return run_live(args, zones_gv, golden_view)
-        # Default to one-shot if neither --show nor --once given.
+        # Default to one-shot if neither --show/--serve-ui nor --once given.
         return run_once(args, zones_gv, golden_view)
     except Exception as e:  # camera/OpenCV problems -> point at the mock path
         print(f"[error] {e}", file=sys.stderr)

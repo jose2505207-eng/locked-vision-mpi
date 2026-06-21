@@ -44,8 +44,19 @@ export const api = {
       body: JSON.stringify(body),
     }),
   auditLog: (id) => req(`/work-orders/${id}/audit-log`),
+  visionState: (id) => req(`/work-orders/${id}/vision-state`),
+  validateReadiness: (id, body = {}) =>
+    req(`/work-orders/${id}/validate-readiness`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   resetDemo: () => req(`/demo/reset`, { method: "POST" }),
 };
+
+// Base URL of the Python vision bridge's UI server (--serve-ui). The browser
+// only reads frames/state from here; it never opens the webcam itself.
+export const VISION_URL =
+  import.meta.env.VITE_VISION_URL || "http://localhost:8010";
 
 // Mock vision scenarios the operator/demo-driver can post (camera-less demo).
 // These names match vision/mock_vision_state.py.
@@ -54,10 +65,10 @@ export const SCENARIOS = [
   { id: "wrong_sequence", label: "Wrong move (blue first)" },
   { id: "step1_done", label: "Red → assembly" },
   { id: "step2_done", label: "Blue → assembly" },
-  { id: "step3_tool_removed", label: "Tool 1 removed" },
-  { id: "step3_tool_returned", label: "Tool 1 returned" },
+  { id: "tool_1_removed_only", label: "Tool 1 removed (sim)" },
+  { id: "tool_1_returned_only", label: "Tool 1 returned (sim)" },
   { id: "step4_done", label: "Yellow → assembly" },
-  { id: "step5_done", label: "Finished → complete" },
+  { id: "step5_done", label: "Finished → complete (sim)" },
   { id: "final_6s_tool_missing", label: "6S: tool missing" },
   { id: "final_6s_pass", label: "6S: all home" },
 ];

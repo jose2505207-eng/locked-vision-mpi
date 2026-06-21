@@ -11,6 +11,7 @@ Status values:
   awaiting_final_6s -> all steps passed, 6S reset not yet verified
   completed         -> final 6S passed, work order closed
 """
+from datetime import datetime, timezone
 
 
 class WorkOrderRuntime:
@@ -24,6 +25,13 @@ class WorkOrderRuntime:
         self.status = "queued"
         self.progress = {}  # temporal flags, e.g. tool removed/returned
         self.latest_vision = {"objects": [], "source": "none"}
+        self.vision_updated_at = None  # ISO timestamp of the last evidence post
+        # Hybrid evidence: per-object state keyed by object name, so a camera
+        # post (blocks) and a simulator post (tools/finished) don't erase each
+        # other — each only updates the objects it actually carries.
+        self.object_state = {}
+        self.last_post_source = "none"
+        self.camera_locked = False
 
 
 class MPIStateMachine:
@@ -61,8 +69,35 @@ class MPIStateMachine:
         return rt.steps[rt.current_step - 1]
 
     def set_vision(self, work_order_id, vision):
+        """Merge incoming evidence by object name (hybrid camera + simulator).
+
+        Objects present in the post are updated; objects absent are preserved.
+        This is what lets the camera stream blocks while the simulator owns
+        tools/finished-assembly without either side wiping the other.
+        """
         rt = self.get(work_order_id)
-        rt.latest_vision = vision
+        now = datetime.now(timezone.utc).isoformat()
+        src = vision.get("source", "external")
+
+        for o in vision.get("objects", []):
+            name = o.get("object")
+            if not name:
+                continue
+            merged = dict(o)
+            merged.setdefault("source", "simulator" if src == "mock" else src)
+            merged["updated_at"] = now
+            rt.object_state[name] = merged
+
+        rt.last_post_source = src
+        rt.vision_updated_at = now
+        if src == "camera":
+            rt.camera_locked = True
+
+        rt.latest_vision = {
+            "objects": list(rt.object_state.values()),
+            "source": src,
+            "scenario": vision.get("scenario"),
+        }
         return rt
 
     def advance(self, work_order_id):

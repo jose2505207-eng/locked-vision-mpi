@@ -93,6 +93,66 @@ pip install -r requirements.txt
 python mock_vision_state.py                    # prints all mock scenarios
 ```
 
+### Real camera workflow (3 terminals)
+
+The dashboard has **two vision modes**: *Demo Mode* (mock simulator buttons) and
+*Camera Bridge Mode*. The browser never opens the webcam — the real camera is
+read by `vision/run_vision.py` (Python/OpenCV), which posts evidence to the
+backend. The dashboard polls the backend and shows it as **source: camera**.
+
+```bash
+# Terminal 1 — backend
+cd /home/ivancito/VisionMPI/backend
+source ../.venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — frontend
+cd /home/ivancito/VisionMPI/frontend
+npm run dev
+
+# Terminal 3 — camera bridge (real webcam, serves the feed to the UI + auto-posts)
+cd /home/ivancito/VisionMPI/vision
+../.venv/bin/python run_vision.py --show --serve-ui --post http://localhost:8000 --wo WO-1001 --camera-index 0 --auto-post-interval 1
+```
+
+`--serve-ui` streams the **annotated camera feed** to the dashboard (the browser
+never opens the webcam — Python/OpenCV does, on `http://localhost:8010`).
+`--auto-post-interval 1` posts camera evidence to the backend every second.
+
+**Align zones to your real table first** (so the rectangles match the taped
+station): `../.venv/bin/python zone_calibrator.py --camera-index 0` — draw each
+zone with the mouse, `n` to accept, `s` to save, then restart the bridge. See
+[vision/README.md](vision/README.md#calibrate-the-zones-to-your-real-table-zone_calibratorpy).
+
+Open **http://localhost:5173**, then run the **Step 1 camera test**:
+
+1. Start **WO-1001** in the dashboard (Station Readiness shows which blocks are home).
+2. The dashboard shows the **live annotated feed** and **source: camera**.
+3. Move a **red** object into the `assembly_zone` rectangle (auto-posts, or press **`p`**).
+4. Detected objects update to `red_block @ assembly_zone`.
+5. Click **Verify Step** → Step 1 passes → **Next Step** unlocks.
+
+**Hybrid evidence:** the camera owns the colored blocks; the **simulator buttons**
+own the **Tool 1** step and **Finished → complete** (the camera can't see those).
+A camera post never erases tool state, and the tool simulator never erases the
+camera's block state.
+
+| Bridge endpoint (`:8010`) | Returns |
+|---|---|
+| `GET /health` | `{status, camera_index, camera_locked}` |
+| `GET /latest-state` | latest `{source, camera_locked, objects, updated_at}` |
+| `GET /latest-frame.jpg` | latest annotated JPEG |
+| `GET /video.mjpg` | MJPEG stream |
+
+**Notes / troubleshooting**
+
+- No live video in the browser panel is **expected** — Python/OpenCV owns the camera.
+- No OpenCV window? Run `../.venv/bin/python test_camera.py` (try `--camera-index 1`/`2`).
+- Nothing detected? Use brighter colored paper / better lighting.
+- Wrong zone? Move the object fully inside the visible zone rectangle.
+- Dashboard not updating? Confirm the backend is on `localhost:8000` and press `p` again.
+- Mock mode always works as a fallback — use the simulator buttons (no camera needed).
+
 ### Or with Docker
 
 ```bash

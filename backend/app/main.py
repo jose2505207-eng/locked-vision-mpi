@@ -22,7 +22,7 @@ from .audit_logger import AuditLogger
 from .fake_mes_service import FakeMESService
 from .models import StepResponse, ValidationResponse, WorkOrderSummary
 from .mpi_state_machine import MPIStateMachine
-from .validation_engine import validate_final_6s, validate_step
+from .validation_engine import validate_final_6s, validate_readiness, validate_step
 
 # --- Optional mock vision scenarios (single source of truth in vision/) ------
 # This lets the frontend post {"scenario": "step1_done"} instead of a full
@@ -82,6 +82,36 @@ def _resolve_vision(payload):
             "scenario": payload.get("scenario"),
         }
     return None
+
+
+def _already_placed(rt):
+    """Objects that earlier move-steps legitimately left in their target zone.
+
+    Used so the out-of-sequence check doesn't flag a block that a previous step
+    correctly placed (it stays in the assembly zone across later steps).
+    """
+    return {
+        s["object"]
+        for s in rt.steps
+        if s.get("type") == "move" and s.get("step", 0) < rt.current_step
+    }
+
+
+def _display_source(vision):
+    """Normalize the stored vision source for the frontend status label.
+
+    -> "camera"    : posted by the Python OpenCV bridge (source=camera)
+    -> "simulator" : posted by the dashboard's mock scenario buttons
+    -> "none"      : no evidence received yet
+    """
+    raw = (vision or {}).get("source")
+    if raw == "camera":
+        return "camera"
+    if vision and (vision.get("scenario") or raw == "mock"):
+        return "simulator"
+    if not vision or not vision.get("objects"):
+        return "none"
+    return raw or "external"
 
 
 # --- endpoints ---------------------------------------------------------------
@@ -177,6 +207,38 @@ def post_vision_state(work_order_id: str, payload: dict = Body(...)):
     }
 
 
+@app.get("/work-orders/{work_order_id}/vision-state")
+def get_vision_state(work_order_id: str):
+    """Latest vision evidence for the work order (polled by the frontend).
+
+    Exposes which source last posted evidence — the Python camera bridge
+    ("camera") or the dashboard's mock buttons ("simulator") — so the UI can
+    show that real camera evidence arrives through the external OpenCV bridge.
+    """
+    rt = _require_rt(work_order_id)
+    vision = rt.latest_vision or {}
+    source = _display_source(vision)
+    return {
+        "work_order_id": work_order_id,
+        "source": source,
+        "camera_locked": bool(rt.camera_locked) or source == "camera",
+        "objects": vision.get("objects", []),
+        "scenario": vision.get("scenario"),
+        "updated_at": rt.vision_updated_at,
+    }
+
+
+@app.post("/work-orders/{work_order_id}/validate-readiness")
+def validate_readiness_endpoint(work_order_id: str, payload: dict = Body(default={})):
+    """Pre-start station-readiness gate (not audit-logged; safe to poll)."""
+    rt = _require_rt(work_order_id)
+    vision = _resolve_vision(payload)
+    if vision is not None:
+        sm.set_vision(work_order_id, vision)
+    result = validate_readiness(rt.latest_vision)
+    return {"work_order_id": work_order_id, **result}
+
+
 @app.post("/work-orders/{work_order_id}/validate-step", response_model=ValidationResponse)
 def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
     rt = _require_rt(work_order_id)
@@ -200,7 +262,7 @@ def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
             detected_objects=rt.latest_vision.get("objects", []),
         )
 
-    result = validate_step(step, rt.latest_vision, rt.progress)
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt))
     audit.log(
         work_order_id, event="validate-step", step=rt.current_step,
         status=result["status"], message=result["message"],
@@ -236,7 +298,7 @@ def advance(work_order_id: str, payload: dict = Body(default={})):
         )
 
     # Re-validate before advancing. This is the hard gate.
-    result = validate_step(step, rt.latest_vision, rt.progress)
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt))
     if not result["can_advance"]:
         audit.log(
             work_order_id, event="advance-blocked", step=rt.current_step,

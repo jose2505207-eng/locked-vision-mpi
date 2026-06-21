@@ -39,6 +39,98 @@ pip install -r requirements.txt          # only needed for real camera
 python mock_vision_state.py              # print all mock scenarios (no camera)
 ```
 
+### Frontend + camera together (3 terminals)
+
+The dashboard shows two modes — *Demo Mode* (mock buttons) and *Camera Bridge
+Mode*. The browser never opens the webcam; this bridge does, and posts evidence
+to the backend, which the dashboard polls and shows as **source: camera**.
+
+```bash
+# Terminal 1 — backend
+cd /home/ivancito/VisionMPI/backend
+source ../.venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — frontend
+cd /home/ivancito/VisionMPI/frontend
+npm run dev
+
+# Terminal 3 — camera bridge (serves feed to UI + auto-posts)
+cd /home/ivancito/VisionMPI/vision
+../.venv/bin/python run_vision.py --show --serve-ui --post http://localhost:8000 --wo WO-1001 --camera-index 0 --auto-post-interval 1
+```
+
+Open **http://localhost:5173**. Real-camera Step 1 test:
+
+1. Start **WO-1001** in the dashboard.
+2. Put a **red** object inside `assembly_zone` in the OpenCV window.
+3. Auto-post sends it every second (or press **`p`** to post now).
+4. Dashboard shows the **live annotated feed**, **source: camera**, and
+   `red_block @ assembly_zone` automatically.
+5. Click **Verify Step** → Step 1 passes → **Next Step** unlocks.
+
+**UI feed server (`--serve-ui`, default port 8010).** The browser only *displays*
+the frame Python serves — it never opens the webcam.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{status, camera_index, camera_locked}` |
+| `GET /latest-state` | `{source, camera_locked, objects, updated_at}` |
+| `GET /latest-frame.jpg` | latest annotated JPEG |
+| `GET /video.mjpg` | MJPEG stream |
+
+**Keys in the OpenCV window:** `p` post now · `s` snapshot · `q` quit.
+
+**Hybrid evidence.** The camera owns the four colored blocks; the simulator owns
+tools and finished-assembly. The backend merges evidence per object, so neither
+side erases the other. Tool step uses the partial scenarios
+`tool_1_removed_only` / `tool_1_returned_only` (they don't touch camera blocks).
+
+### Calibrate the zones to your real table (`zone_calibrator.py`)
+
+The default zones in `zones.json` are a generic layout. To make the on-screen
+rectangles line up with your **physical taped station**, mount the camera, then
+draw each zone on the live image:
+
+```bash
+cd /home/ivancito/VisionMPI/vision
+../.venv/bin/python zone_calibrator.py --camera-index 2
+```
+
+You'll be prompted to draw zones in this order: `red_home`, `blue_home`,
+`yellow_home`, `green_home`, `tool_1_home`, `tool_2_home`, `assembly_zone`,
+`complete_zone`.
+
+Controls in the window:
+
+| Key | Action |
+|---|---|
+| drag mouse | draw a rectangle for the current zone |
+| `n` | accept the rectangle, move to the next zone |
+| `r` | redraw the current zone |
+| `b` | go back to the previous zone |
+| `s` | save `zones.json` |
+| `q` | quit without saving |
+
+It saves to `backend/app/data/zones.json` (the same file the pipeline reads) with
+frame-size metadata:
+
+```json
+{ "frame_width": 1280, "frame_height": 720,
+  "zones": { "red_home": [x1, y1, x2, y2], "...": [] } }
+```
+
+`run_vision.py` reads `frame_width`/`frame_height` (falling back to the older
+`golden_view` format) and scales the zones to the live frame, so they stay
+aligned. After saving, just restart the bridge:
+
+```bash
+../.venv/bin/python run_vision.py --show --serve-ui --post http://localhost:8000 --wo WO-1001 --camera-index 2 --auto-post-interval 1
+```
+
+> Calibrate from the camera's final mounted position — moving the camera
+> afterward invalidates the zones (re-run the calibrator).
+
 ### Test the camera with ANY colored object (no LEGO needed)
 
 You can validate the whole pipeline — webcam, color detection, zone mapping,

@@ -8,6 +8,7 @@ import DetectedObjectsPanel from "./components/DetectedObjectsPanel.jsx";
 import ErrorBanner from "./components/ErrorBanner.jsx";
 import AuditLogPanel from "./components/AuditLogPanel.jsx";
 import Final6SCheckPanel from "./components/Final6SCheckPanel.jsx";
+import HowToUseCameraPanel from "./components/HowToUseCameraPanel.jsx";
 
 const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
 
@@ -33,10 +34,28 @@ function recommendedScenario(stepInfo, lastScenario) {
   switch (current_step) {
     case 1: return "step1_done";
     case 2: return "step2_done";
-    case 3: return lastScenario === "step3_tool_removed" ? "step3_tool_returned" : "step3_tool_removed";
+    case 3: return lastScenario === "tool_1_removed_only" ? "tool_1_returned_only" : "tool_1_removed_only";
     case 4: return "step4_done";
     case 5: return "step5_done";
     default: return null;
+  }
+}
+
+// Human "do this next" guidance per step (Part G). Distinguishes real-camera
+// block steps from simulator-only tool/finished steps.
+function recommendedAction(stepInfo) {
+  if (!stepInfo) return "Place all blocks in their home zones, then check readiness.";
+  const { status, current_step } = stepInfo;
+  if (status === "queued") return "Place all blocks in home zones, then Start the work order.";
+  if (status === "awaiting_final_6s" || status === "completed")
+    return "Return all objects home, then run the Final 6S check.";
+  switch (current_step) {
+    case 1: return "📷 Use real camera: move the RED block into assembly_zone.";
+    case 2: return "📷 Use real camera: move the BLUE block into assembly_zone.";
+    case 3: return "🧪 Use simulator: Tool 1 removed, then Tool 1 returned.";
+    case 4: return "📷 Use real camera: move the YELLOW block into assembly_zone.";
+    case 5: return "🧪 Use simulator: Finished → complete.";
+    default: return "";
   }
 }
 
@@ -50,6 +69,12 @@ export default function App() {
   const [objects, setObjects] = useState([]);
   const [lastScenario, setLastScenario] = useState(null);
   const [audit, setAudit] = useState([]);
+  const [visionMeta, setVisionMeta] = useState({
+    source: "none",
+    camera_locked: false,
+    updated_at: null,
+  });
+  const [readiness, setReadiness] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -87,6 +112,40 @@ export default function App() {
     refreshStep(selectedId).catch((e) => setError(String(e)));
     refreshAudit(selectedId).catch(() => {});
   }, [selectedId]);
+
+  // Poll the backend's latest vision evidence so camera-bridge posts (pressing
+  // `p` in the OpenCV window) show up automatically — no page refresh needed.
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    const tick = async () => {
+      try {
+        const vs = await api.visionState(selectedId);
+        if (!active) return;
+        setVisionMeta({
+          source: vs.source,
+          camera_locked: vs.camera_locked,
+          updated_at: vs.updated_at,
+        });
+        setObjects(vs.objects || []);
+        if (vs.scenario) setLastScenario(vs.scenario);
+        // Before the work order starts, also refresh the readiness breakdown.
+        if (stepInfo?.status === "queued" || !stepInfo) {
+          try {
+            setReadiness(await api.validateReadiness(selectedId));
+          } catch (_) {}
+        }
+      } catch (_) {
+        /* transient; next tick retries */
+      }
+    };
+    tick();
+    const handle = setInterval(tick, 1500);
+    return () => {
+      active = false;
+      clearInterval(handle);
+    };
+  }, [selectedId, stepInfo?.status]);
 
   async function guard(fn) {
     setBusy(true);
@@ -209,7 +268,9 @@ export default function App() {
             ready={stationReady}
             healthOk={healthOk}
             zonesClear={zonesClear(objects)}
+            readiness={readiness}
           />
+          <HowToUseCameraPanel workOrderId={selectedId} />
         </div>
 
         {/* Center column */}
@@ -239,6 +300,11 @@ export default function App() {
             lastScenario={lastScenario}
             recommended={recommended}
             disabled={busy || !selectedId}
+            visionMeta={visionMeta}
+            objects={objects}
+            healthOk={healthOk}
+            workOrderId={selectedId}
+            recommendedAction={recommendedAction(stepInfo)}
           />
           <AuditLogPanel entries={audit} />
         </div>

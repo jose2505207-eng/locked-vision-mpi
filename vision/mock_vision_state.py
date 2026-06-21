@@ -71,7 +71,17 @@ SCENARIOS = {
         "finished_assembly": "complete_zone",
         "tool_1": None,
     },
+
+    # Partial (hybrid) scenarios — emit ONLY the listed objects so they merge
+    # with live camera block evidence instead of overwriting it. Used for the
+    # tool step and the finished-assembly step where the camera sees nothing.
+    "tool_1_removed_only": {"tool_1": None},
+    "tool_1_returned_only": {"tool_1": "tool_1_home"},
+    "finished_only": {"finished_assembly": "complete_zone"},
 }
+
+# Scenarios that should emit only their overridden objects (not the full set).
+PARTIAL_SCENARIOS = {"tool_1_removed_only", "tool_1_returned_only", "finished_only"}
 
 
 def build_state(scenario: str, source: str = "mock") -> dict:
@@ -83,20 +93,28 @@ def build_state(scenario: str, source: str = "mock") -> dict:
     overrides = SCENARIOS[scenario]
 
     objects = []
-    # Base objects default to their home zone unless overridden.
-    for name, home in OBJECT_HOMES.items():
-        zone = overrides.get(name, home)
-        objects.append(_obj(name, zone))
-
-    # finished_assembly only appears when a scenario places it.
-    if "finished_assembly" in overrides:
-        objects.append(_obj("finished_assembly", overrides["finished_assembly"]))
+    if scenario in PARTIAL_SCENARIOS:
+        # Emit only the overridden objects so they merge with camera evidence.
+        for name, zone in overrides.items():
+            objects.append(_obj(name, zone))
+    else:
+        # Base objects default to their home zone unless overridden.
+        for name, home in OBJECT_HOMES.items():
+            zone = overrides.get(name, home)
+            objects.append(_obj(name, zone))
+        # finished_assembly only appears when a scenario places it.
+        if "finished_assembly" in overrides:
+            objects.append(_obj("finished_assembly", overrides["finished_assembly"]))
 
     return {"objects": objects, "source": source, "scenario": scenario}
 
 
 def _obj(name: str, zone: Optional[str]) -> dict:
-    return {"object": name, "zone": zone, "bbox": None, "confidence": 0.99}
+    # Mock evidence is always simulator-sourced (per-object source tracking).
+    return {
+        "object": name, "zone": zone, "bbox": None,
+        "confidence": 0.99, "source": "simulator",
+    }
 
 
 if __name__ == "__main__":

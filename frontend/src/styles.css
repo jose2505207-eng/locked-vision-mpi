@@ -170,8 +170,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--muted);
   overflow: hidden;
 }
-.camera .lock { position: absolute; top: 8px; left: 10px; font-size: 12px; color: var(--accent); }
-.camera .reticle { font-size: 13px; text-align: center; }
+.camera .lock { position: absolute; top: 8px; left: 10px; font-size: 12px; color: var(--accent); z-index: 2; }
+.camera .reticle { font-size: 13px; text-align: center; padding: 0 16px; line-height: 1.5; }
+.camera .cam-feed { width: 100%; height: 100%; object-fit: contain; display: block; }
 .sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .sim-grid button { font-size: 13px; padding: 8px; }
 .sim-grid button.recommended {
@@ -192,6 +193,47 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .rec-hint {
   color: var(--accent); font-size: 13px; font-weight: 700; margin-bottom: 8px;
 }
+
+/* Vision source status labels */
+.vision-status {
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2); padding: 10px 12px; margin-bottom: 12px;
+}
+.vs-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; }
+.vs-key { color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; }
+.vs-val { color: var(--text); text-align: right; word-break: break-word; }
+.vs-ok { color: var(--pass); font-weight: 700; }
+.vs-bad { color: var(--block); font-weight: 700; }
+.vs-source { font-weight: 800; }
+.vs-source.src-camera { color: var(--accent-2); }
+.vs-source.src-sim { color: var(--accent); }
+.vs-source.src-none { color: var(--muted); }
+
+/* Camera Bridge Mode explainer */
+.bridge-box {
+  border: 1px solid var(--accent-2); border-radius: 8px;
+  background: #0d1c2e; padding: 12px; margin-bottom: 8px;
+}
+.bridge-title { color: var(--accent-2); font-weight: 800; margin-bottom: 6px; }
+.bridge-box p { font-size: 12.5px; color: var(--text); margin: 0 0 8px; line-height: 1.4; }
+.bridge-box code, .trouble code {
+  background: #05070a; border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; font-family: ui-monospace, monospace; font-size: 12px; color: #9ecbff;
+}
+pre.cmd {
+  background: #05070a; border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px; font-size: 11.5px; color: #aff5c1; overflow-x: auto;
+  white-space: pre-wrap; word-break: break-all; margin: 0;
+}
+
+/* How-to + troubleshooting */
+.howto { margin: 0; padding-left: 20px; }
+.howto li { font-size: 13px; padding: 3px 0; line-height: 1.35; }
+.trouble { margin-top: 14px; font-size: 12.5px; }
+.trouble summary { cursor: pointer; color: var(--muted); font-weight: 700; }
+.trouble ul { margin: 8px 0 0; padding-left: 18px; }
+.trouble li { padding: 3px 0; line-height: 1.4; color: var(--muted); }
+.trouble strong { color: var(--text); }
 
 /* Detected objects */
 .obj-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
@@ -215,3 +257,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Final 6S */
 .sixs-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 15px; }
 .checklist { margin: 10px 0; }
+
+/* Station readiness per-object breakdown */
+.ready-objs { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.ro-ok { color: var(--pass); font-weight: 700; font-size: 13px; }
+.ro-wrong { color: var(--block); font-weight: 700; font-size: 13px; }
