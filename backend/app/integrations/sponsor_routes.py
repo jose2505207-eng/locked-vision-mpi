@@ -8,7 +8,7 @@ changes a validation decision.
 """
 import logging
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 
 from . import sponsor_flags
 
@@ -88,3 +88,35 @@ def audit_summary(payload: dict = Body(default={})):
     from . import claude_assistant
     entries = (payload or {}).get("entries", [])
     return claude_assistant.audit_summary(entries)
+
+
+# --- Deepgram voice commands (optional; never bypasses validation) -----------
+
+@router.post("/voice/command")
+def voice_command(payload: dict = Body(default={})):
+    """Recognize a voice-command intent from text (local, always available).
+
+    The frontend feeds in a transcript (or types it); we return the intent so it
+    can call the NORMAL endpoint (e.g. /validate-step). Voice never decides.
+    """
+    from . import deepgram_voice
+    text = (payload or {}).get("text", "")
+    return {
+        "intent": deepgram_voice.recognize_intent(text),
+        "text": text,
+        "supported": deepgram_voice.SUPPORTED_COMMANDS,
+        "transcription_active": sponsor_flags.active("deepgram_voice"),
+    }
+
+
+@router.post("/voice/transcribe")
+async def voice_transcribe(audio: UploadFile = File(...)):
+    """Transcribe an audio clip via Deepgram, then recognize the intent.
+
+    Returns transcript=None with a reason if Deepgram is inactive — never errors.
+    """
+    from . import deepgram_voice
+    data = await audio.read()
+    result = deepgram_voice.transcribe(data, audio.content_type or "audio/wav")
+    result["intent"] = deepgram_voice.recognize_intent(result.get("transcript") or "")
+    return result
