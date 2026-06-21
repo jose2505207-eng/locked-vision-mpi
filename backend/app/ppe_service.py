@@ -5,9 +5,17 @@ inference API, parses the predictions, and then *the backend* decides whether
 safety glasses are verified based on configured class names and a confidence
 threshold. The model never decides; we do.
 
+Providers (PPE_MODEL_PROVIDER, or auto-resolved):
+    roboflow_workflow  a Roboflow Workflow (workspace + workflow id) via inference-sdk
+    roboflow           a single Roboflow detect model
+    mock               clearly-labeled development fallback (no key)
+
 Config (environment variables):
     ROBOFLOW_API_KEY            required to call the real model
-    ROBOFLOW_PPE_MODEL_ID       e.g. "ppe-detection/3"
+    ROBOFLOW_WORKSPACE          workflow workspace, e.g. "joses-workspace-zokda"
+    ROBOFLOW_WORKFLOW_ID        e.g. "find-object-and-safety-glasses"
+    ROBOFLOW_API_URL            default https://serverless.roboflow.com
+    ROBOFLOW_PPE_MODEL_ID       single-model fallback, e.g. "ppe-detection/3"
     ROBOFLOW_DETECT_URL         default https://detect.roboflow.com
     PPE_MIN_CONFIDENCE          default 0.72
     PPE_CHECK_EXPIRATION_SECONDS  default 20
@@ -44,7 +52,9 @@ def get_config() -> dict:
 
 def model_configured() -> bool:
     cfg = get_config()
-    return bool(cfg["api_key"] and cfg["model_id"])
+    has_workflow = bool(cfg["api_key"] and cfg["workspace"] and cfg["workflow_id"])
+    has_detect = bool(cfg["api_key"] and cfg["model_id"])
+    return has_workflow or has_detect
 
 
 def call_roboflow(image_bytes: bytes, cfg: dict) -> list:
@@ -78,6 +88,67 @@ def call_roboflow(image_bytes: bytes, cfg: dict) -> list:
         raise PPEServiceError(f"PPE model request failed: {e}") from e
 
     return data.get("predictions", []) or []
+
+
+def _extract_predictions(workflow_result) -> list:
+    """Flatten a Roboflow Workflow result into a list of detection dicts.
+
+    A workflow returns a list (one entry per input image); each entry is a dict
+    of named output blocks. An object-detection block is itself a dict with a
+    nested "predictions" list. We collect every detection that has a class +
+    confidence, regardless of how the output block is named.
+    """
+    out = workflow_result[0] if isinstance(workflow_result, list) else workflow_result
+    preds = []
+
+    def _harvest(value):
+        if isinstance(value, dict):
+            if "class" in value and "confidence" in value:
+                preds.append(value)
+            elif isinstance(value.get("predictions"), list):
+                for d in value["predictions"]:
+                    if isinstance(d, dict) and "class" in d and "confidence" in d:
+                        preds.append(d)
+        elif isinstance(value, list):
+            for d in value:
+                if isinstance(d, dict) and "class" in d and "confidence" in d:
+                    preds.append(d)
+
+    if isinstance(out, dict):
+        for v in out.values():
+            _harvest(v)
+    return preds
+
+
+def call_roboflow_workflow(image_path: str, cfg: dict) -> list:
+    """Run a Roboflow Workflow on an image and return raw predictions.
+
+    Uses the inference_sdk HTTP client (run_workflow). This is the working,
+    snapshot-based equivalent of the WebRTC streaming snippet — it needs no paid
+    GPU-streaming plan. Raises PPEServiceError if misconfigured or the call fails.
+    """
+    if not (cfg["api_key"] and cfg["workspace"] and cfg["workflow_id"]):
+        raise PPEServiceError(
+            "Roboflow workflow not configured. Set ROBOFLOW_API_KEY, "
+            "ROBOFLOW_WORKSPACE and ROBOFLOW_WORKFLOW_ID."
+        )
+    try:
+        from inference_sdk import InferenceHTTPClient
+    except ImportError as e:
+        raise PPEServiceError(
+            "inference-sdk not installed. `pip install inference-sdk`."
+        ) from e
+    try:
+        client = InferenceHTTPClient(api_url=cfg["api_url"], api_key=cfg["api_key"])
+        result = client.run_workflow(
+            workspace_name=cfg["workspace"],
+            workflow_id=cfg["workflow_id"],
+            images={"image": image_path},
+            use_cache=True,
+        )
+    except Exception as e:
+        raise PPEServiceError(f"Roboflow workflow request failed: {e}") from e
+    return _extract_predictions(result)
 
 
 def decide(predictions: list, min_confidence: float) -> dict:
@@ -146,6 +217,18 @@ def run_check(image_bytes: bytes) -> dict:
     if cfg["provider"] == "mock":
         predictions = _mock_predictions(cfg)
         mode = "mock"
+    elif cfg["provider"] == "roboflow_workflow":
+        import os as _os
+        import tempfile
+        # run_workflow takes an image path; write the snapshot to a temp file.
+        fd, path = tempfile.mkstemp(suffix=".jpg")
+        try:
+            with _os.fdopen(fd, "wb") as f:
+                f.write(image_bytes)
+            predictions = call_roboflow_workflow(path, cfg)
+        finally:
+            _os.unlink(path)
+        mode = "live"
     else:
         predictions = call_roboflow(image_bytes, cfg)
         mode = "live"

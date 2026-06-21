@@ -33,13 +33,25 @@ def ppe_config() -> dict:
     """
     api_key = os.getenv("ROBOFLOW_API_KEY", "")
     model_id = os.getenv("ROBOFLOW_PPE_MODEL_ID", "")
+    workspace = os.getenv("ROBOFLOW_WORKSPACE", "")
+    workflow_id = os.getenv("ROBOFLOW_WORKFLOW_ID", "")
     provider = os.getenv("PPE_MODEL_PROVIDER", "").strip().lower()
     if not provider:
-        provider = "roboflow" if (api_key and model_id) else "mock"
+        # Auto-resolve: a Roboflow Workflow (workspace + workflow id) wins, then a
+        # single detect model, otherwise labeled mock.
+        if api_key and workspace and workflow_id:
+            provider = "roboflow_workflow"
+        elif api_key and model_id:
+            provider = "roboflow"
+        else:
+            provider = "mock"
     return {
         "provider": provider,
         "api_key": api_key,
         "model_id": model_id,
+        "workspace": workspace,
+        "workflow_id": workflow_id,
+        "api_url": os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.com"),
         "detect_url": os.getenv("ROBOFLOW_DETECT_URL", "https://detect.roboflow.com"),
         "min_confidence": float(os.getenv("PPE_MIN_CONFIDENCE", "0.72")),
         "expiration_seconds": int(os.getenv("PPE_CHECK_EXPIRATION_SECONDS", "20")),
