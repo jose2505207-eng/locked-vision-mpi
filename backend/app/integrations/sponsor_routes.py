@@ -35,6 +35,14 @@ def sponsors_status():
             redis_state = {"enabled": True, "connected": False, "error": str(e)}
     snap["redis"] = redis_state
 
+    # Orkes shadow workflow summary (in-memory mirror; never authoritative).
+    if sponsor_flags.active("orkes_shadow"):
+        try:
+            from . import orkes_workflow
+            snap["orkes"] = orkes_workflow.get_status()
+        except Exception as e:  # pragma: no cover
+            snap["orkes"] = {"active": True, "error": str(e)}
+
     # Flat convenience booleans the frontend badges read directly.
     snap["badges"] = {
         "sentry": sponsor_flags.active("sentry"),
