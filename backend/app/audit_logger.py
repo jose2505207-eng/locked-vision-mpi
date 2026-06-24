@@ -32,6 +32,10 @@ class AuditLogger:
             f.write(json.dumps(entry) + "\n")
         return entry
 
+    def clear(self):
+        """Truncate the audit log — used by the demo reset."""
+        open(self.path, "w").close()
+
     def read(self, work_order_id=None):
         entries = []
         if not os.path.exists(self.path):
