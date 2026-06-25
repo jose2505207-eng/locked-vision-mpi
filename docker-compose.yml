@@ -1,6 +1,6 @@
 # Optional convenience stack. Local dev without Docker is the primary path
 # (see README). These services mount the source and install deps on start, so
-# no Dockerfiles are required for the hackathon.
+# no Dockerfiles are required.
 services:
   backend:
     image: python:3.11-slim
@@ -11,8 +11,6 @@ services:
     volumes:
       - ./backend:/app
       - ./vision:/vision      # so backend can import mock_vision_state
-    environment:
-      - SENTRY_DSN=${SENTRY_DSN:-}
     ports:
       - "8000:8000"
 

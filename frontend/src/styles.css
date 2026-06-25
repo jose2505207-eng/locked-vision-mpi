@@ -343,18 +343,3 @@ pre.cmd {
 .ready-objs { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 .ro-ok { color: var(--pass); font-weight: 700; font-size: 13px; }
 .ro-wrong { color: var(--block); font-weight: 700; font-size: 13px; }
-
-/* Sponsor stack panel (shadow-mode status badges) */
-.sponsor-panel .sponsor-shadow {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-  color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
-}
-.sponsor-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-.sponsor-badge {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2);
-}
-.sponsor-badge .sponsor-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.sponsor-badge.on { border-color: var(--pass); color: var(--pass); }
-.sponsor-badge.on .sponsor-dot { background: var(--pass); box-shadow: 0 0 6px var(--pass); }
-.sponsor-badge.off { color: var(--muted); }

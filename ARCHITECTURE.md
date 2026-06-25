@@ -53,9 +53,6 @@
 - `components/` — queue, station readiness, MPI step (gated Next button), live
   camera / vision simulator, detected objects, error banner, audit log, final 6S.
 
-### Integrations (`integrations/`) — additive, isolated
-- `fetch_agent/` MES Supervisor Agent · `sentry/` · `redis/` · `deepgram/` · `arize/`.
-
 ## The vision contract
 
 Both mock and real vision return the identical shape, so real vision drops in

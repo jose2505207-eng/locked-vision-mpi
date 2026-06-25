@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Make our debug logs ("ppe" PPE checks, "mpi" step verification) visible under
 # uvicorn, which otherwise installs no INFO-level handler on the root logger.
-for _name in ("ppe", "mpi", "sponsors"):
+for _name in ("ppe", "mpi"):
     _lg = logging.getLogger(_name)
     if not _lg.handlers:
         _h = logging.StreamHandler()
@@ -32,10 +32,10 @@ for _name in ("ppe", "mpi", "sponsors"):
 
 
 def _load_dotenv():
-    """Load repo-root .env into the environment if present (dependency-free).
+    """Load the repo-root .env into the environment if present (dependency-free).
 
     Lets `uvicorn app.main:app` pick up secrets like ROBOFLOW_API_KEY without an
-    --env-file flag. Already-set environment variables always win over the file.
+    --env-file flag. Already-set environment variables always win.
     """
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     path = os.path.join(root, ".env")
@@ -62,12 +62,6 @@ from .verification_routes import router as verification_router
 from . import ppe_service, verification_session_service
 from .validation_engine import validate_final_6s, validate_readiness, validate_step
 
-# Sponsor stack (SHADOW MODE): observational adapters behind feature flags. None
-# of this is authoritative; it only mirrors decisions the engine already made.
-from .integrations import sponsor_bus, sponsor_flags
-from .integrations.events import build_validation_event
-from .integrations.sponsor_routes import router as sponsor_router
-
 # --- Optional mock vision scenarios (single source of truth in vision/) ------
 # This lets the frontend post {"scenario": "step1_done"} instead of a full
 # object list, which makes the camera-less demo trivial to drive.
@@ -80,10 +74,6 @@ try:
     from mock_vision_state import build_state as build_mock_state  # type: ignore
 except Exception:  # pragma: no cover - mock module is optional at runtime
     build_mock_state = None
-
-# --- Sentry monitoring (sponsor stack, flag-gated, fail-soft) ----------------
-from .integrations.sentry_setup import init_sentry
-init_sentry()
 
 app = FastAPI(title="Locked Vision MPI — Fake MES", version="0.1.0")
 
@@ -102,16 +92,6 @@ audit = AuditLogger()
 # workflow (/api/verification-sessions/*, /api/work-orders/*/unlock).
 app.include_router(ppe_router)
 app.include_router(verification_router)
-app.include_router(sponsor_router)
-
-
-def _emit_sponsor_event(work_order_id, step, result, vision_state, event_type):
-    """Mirror a validation result to sponsor adapters. Never raises."""
-    try:
-        event = build_validation_event(work_order_id, step, result, vision_state, event_type)
-        sponsor_bus.emit(event)
-    except Exception:  # pragma: no cover - sponsor emission must never break a request
-        pass
 
 
 # --- helpers -----------------------------------------------------------------
@@ -332,8 +312,6 @@ def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
         status=result["status"], message=result["message"],
         detected_objects=result["detected_objects"],
     )
-    # SHADOW: mirror the (already-decided) result to sponsor adapters.
-    _emit_sponsor_event(work_order_id, step, result, rt.latest_vision, "validate-step")
     return ValidationResponse(
         work_order_id=work_order_id,
         current_step=rt.current_step,
@@ -365,7 +343,6 @@ def advance(work_order_id: str, payload: dict = Body(default={})):
 
     # Re-validate before advancing. This is the hard gate.
     result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt), all_steps=rt.steps)
-    _emit_sponsor_event(work_order_id, step, result, rt.latest_vision, "advance")
     if not result["can_advance"]:
         audit.log(
             work_order_id, event="advance-blocked", step=rt.current_step,
@@ -424,7 +401,6 @@ def final_6s_check(work_order_id: str, payload: dict = Body(default={})):
         status=result["status"], message=result["message"],
         detected_objects=result["detected_objects"],
     )
-    _emit_sponsor_event(work_order_id, None, result, rt.latest_vision, "final-6s")
     return ValidationResponse(
         work_order_id=work_order_id,
         current_step=rt.current_step,

@@ -10,7 +10,6 @@ import AuditLogPanel from "./components/AuditLogPanel.jsx";
 import Final6SCheckPanel from "./components/Final6SCheckPanel.jsx";
 import HowToUseCameraPanel from "./components/HowToUseCameraPanel.jsx";
 import PPECheckModal from "./components/PPECheckModal.jsx";
-import SponsorPanel from "./components/SponsorPanel.jsx";
 
 const PARTS = ["red_block", "blue_block", "yellow_block", "green_block", "finished_assembly"];
 
@@ -25,7 +24,7 @@ function zonesClear(objects) {
 }
 
 // Which mock-evidence button is the correct next move for the current state.
-// Drives the highlighted "recommended" button so judges can't get lost.
+// Drives the highlighted "recommended" button so the operator can't get lost.
 function recommendedScenario(stepInfo, lastScenario) {
   if (!stepInfo) return "station_ready";
   const { status, current_step } = stepInfo;
@@ -318,7 +317,6 @@ export default function App() {
             recommendedAction={recommendedAction(stepInfo)}
           />
           <AuditLogPanel entries={audit} />
-          <SponsorPanel />
         </div>
       </div>
 

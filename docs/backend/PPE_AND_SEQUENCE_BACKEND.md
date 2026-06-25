@@ -102,25 +102,23 @@ backend is the single arbiter; the frontend is a sensor + display.
 | `backend/app/verification_routes.py` | The 5 session endpoints + authoritative unlock |
 | `backend/app/ppe_routes.py` | Standalone `/api/ppe/*` check + config |
 
-## Two-Role Boundary
+## Trust Boundary
 
-Two roles work alongside this backend; neither owns truth.
+Two layers work alongside this backend; neither owns truth.
 
-- **Frontend role does not own truth.** It builds the camera UI, sends events
+- **The frontend does not own truth.** It builds the camera UI, sends events
   (PPE snapshot, block submissions), polls status, and displays backend
   responses. It enables **Open Work Order** only when the backend returns
   `can_open_work_order: true`.
-- **Sponsor role does not own truth.** It connects a real PPE model/provider that
-  returns **evidence** (labels, confidence, boxes, raw JSON). It never returns
-  unlock permission.
+- **The detection provider does not own truth.** The PPE model/provider returns
+  **evidence** (labels, confidence, boxes, raw JSON). It never returns unlock
+  permission.
 - **Backend owns truth.** It applies the PPE policy (`ppe_service.decide()`),
   validates the block sequence (`block_sequence_service`), and computes
   `can_open_work_order` in exactly one place
   (`verification_session_service`).
 
-Summary: **Frontend sends events. Sponsor APIs return evidence. Backend decides
-`can_open_work_order`.** Wrong operator actions are forwarded by the frontend,
-then caught, logged, and rejected by the backend — never prevented locally and
-never silently fixed.
-
-Full plan: [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).
+Summary: **Frontend sends events. The detection provider returns evidence.
+Backend decides `can_open_work_order`.** Wrong operator actions are forwarded by
+the frontend, then caught, logged, and rejected by the backend — never prevented
+locally and never silently fixed.

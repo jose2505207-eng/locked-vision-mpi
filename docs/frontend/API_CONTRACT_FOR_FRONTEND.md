@@ -231,5 +231,3 @@ Blocked (HTTP 200, read the body — not the status code):
 uses the session endpoints, displays backend errors, sends wrong actions to the
 backend instead of preventing them locally, and enables the WO only from backend
 `can_open_work_order: true`.
-
-See also: [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).

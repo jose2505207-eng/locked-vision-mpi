@@ -1,28 +1,27 @@
 ---
 name: demo-readiness
-description: Use this skill when preparing the hackathon demo, pitch, README, architecture doc, or final Devpost submission. It creates/maintains DEMO_SCRIPT.md, README.md, ARCHITECTURE.md, and SPONSOR_INTEGRATIONS.md, and keeps the pitch sharp and the four demo beats reliable.
+description: Use this skill when preparing the demo, pitch, README, or architecture doc. It creates/maintains DEMO_SCRIPT.md, README.md, and ARCHITECTURE.md, and keeps the pitch sharp and the four demo beats reliable.
 ---
 
 # Demo Readiness
 
 ## Purpose
 
-Make Locked Vision MPI demo-ready and submission-ready. Keep the pitch sharp, the run-of-show tight, and the four key demo beats reliable on stage.
+Make Locked Vision MPI demo-ready. Keep the pitch sharp, the run-of-show tight, and the four key demo beats reliable.
 
 Pitch anchor:
 > "This is not a camera watching a table. This is visual proof connected to manufacturing execution. The MPI only moves forward when the real world is correct."
 
 ## When to use
 
-- Writing or updating the demo script, README, architecture doc, or sponsor doc.
-- Preparing the Devpost submission.
+- Writing or updating the demo script, README, or architecture doc.
 - Doing a demo dry run and hardening the flow.
 
 ## Inputs Claude should inspect
 
-- `MAIN.md` sections 9 (demo flow), 10 (prizes), 12 (DoD), 13 (safety).
+- `MAIN.md` sections 9 (demo flow), 11 (DoD), 12 (safety).
 - Current backend endpoints and frontend state (to keep docs accurate).
-- Any existing `README.md`, `ARCHITECTURE.md`, `SPONSOR_INTEGRATIONS.md`.
+- Any existing `README.md`, `ARCHITECTURE.md`.
 
 ## Step-by-step procedure
 
@@ -34,24 +33,22 @@ Pitch anchor:
 2. Write/refresh `DEMO_SCRIPT.md`: exact run-of-show, who clicks/moves what, expected on-screen result, and recovery steps if something glitches.
 3. Write/refresh `README.md`: what it is, setup, run commands (backend, vision, frontend), and the one-line pitch.
 4. Write/refresh `ARCHITECTURE.md`: the data flow (MES truth → state machine → can_advance; vision = evidence; audit log) and key files.
-5. Write/refresh `SPONSOR_INTEGRATIONS.md` (coordinate with `/sponsor-integrations`): prize mapping and how each integration ties to the MPI story.
-6. Time the demo; trim anything that doesn't land in the first 10 seconds.
-7. List known limitations and a fallback path (e.g., snapshot mode if the live camera fails).
+5. Time the demo; trim anything that doesn't land in the first 10 seconds.
+6. List known limitations and a fallback path (e.g., snapshot mode if the live camera fails).
 
 ## Files this skill may edit
 
 - `DEMO_SCRIPT.md`
 - `README.md`
 - `ARCHITECTURE.md`
-- `SPONSOR_INTEGRATIONS.md`
 
 ## Files this skill should not touch
 
-- Backend, vision, frontend, and integration source code. This skill documents and rehearses; it does not implement. Route code fixes to the owning skill.
+- Backend, vision, and frontend source code. This skill documents and rehearses; it does not implement. Route code fixes to the owning skill.
 
 ## Expected output
 
-A complete, accurate set of demo docs: a tight `DEMO_SCRIPT.md` covering the four beats with recovery steps, a clean `README.md` with working run commands, an accurate `ARCHITECTURE.md`, and an aligned `SPONSOR_INTEGRATIONS.md`.
+A complete, accurate set of demo docs: a tight `DEMO_SCRIPT.md` covering the four beats with recovery steps, a clean `README.md` with working run commands, and an accurate `ARCHITECTURE.md`.
 
 ## Definition of done
 

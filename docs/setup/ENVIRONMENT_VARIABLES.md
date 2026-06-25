@@ -1,9 +1,5 @@
 # Environment Variables
 
-> Part of the two-role handoff — see
-> [`docs/HANDOFF_TWO_ROLE_EXECUTION_PLAN.md`](../HANDOFF_TWO_ROLE_EXECUTION_PLAN.md).
-> The Sponsor Integration Role owns the PPE provider variables below.
-
 Copy `.env.example` to `.env` and fill in only what you use. The core demo and the
 verification workflow run with **none** of these set (PPE falls back to a clearly
 labeled mock).
@@ -36,12 +32,6 @@ labeled mock).
 |---|---|---|
 | `VITE_API_URL` | `http://localhost:8000` | Frontend → backend base URL. |
 | `VITE_VISION_URL` | `http://localhost:8010` | Frontend → vision bridge feed (camera UI). |
-| `SENTRY_DSN` | _(empty)_ | Optional Sentry monitoring. |
-| `REDIS_URL` | `redis://localhost:6379/0` | Optional Redis. |
-| `DEEPGRAM_API_KEY` | _(empty)_ | Optional voice. |
-| `ARIZE_API_KEY`, `ARIZE_SPACE_ID` | _(empty)_ | Optional vision eval. |
-| `ANTHROPIC_API_KEY` | _(empty)_ | Optional audit-log explanations. |
-| `MES_BACKEND_URL` | `http://localhost:8000` | Fetch agent → backend. |
 
 ## How `.env` is loaded
 
