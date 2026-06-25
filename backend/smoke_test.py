@@ -55,27 +55,37 @@ r = c.post(f"/work-orders/{WO}/validate-step").json()
 check("step 2 passes (vision posted separately)", r["can_advance"] is True)
 c.post(f"/work-orders/{WO}/advance")
 
-# step 3 tool: removed -> blocked, returned -> pass
-r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step3_tool_removed"}).json()
-check("tool removed blocks step 3", r["can_advance"] is False, f"-> {r['message']}")
-r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step3_tool_returned"}).json()
-check("tool returned passes step 3", r["can_advance"] is True, f"-> {r['message']}")
+# step 3 red: blocked until red joins green+blue in assembly, then passes
+r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step2_done"}).json()
+check("step 3 blocked without red", r["can_advance"] is False, f"-> {r['message']}")
+r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step3_done"}).json()
+check("step 3 passes (green+blue+red in assembly)", r["can_advance"] is True, f"-> {r['message']}")
+# cumulative regression: move GREEN back out -> step 3 must now FAIL
+r = c.post(f"/work-orders/{WO}/validate-step",
+           json={"objects": [{"object": "green_block", "zone": "green_home"}], "source": "camera"}).json()
+check("step 3 fails when green moved back out (cumulative)", r["can_advance"] is False, f"-> {r['message']}")
+# restore and advance
+c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step3_done"})
 c.post(f"/work-orders/{WO}/advance")
 
-# step 4
+# step 4: all four in assembly passes; moving one out fails (cumulative)
 r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step4_done"}).json()
-check("step 4 passes", r["can_advance"] is True)
+check("step 4 passes (all four in assembly)", r["can_advance"] is True)
+r = c.post(f"/work-orders/{WO}/validate-step",
+           json={"objects": [{"object": "blue_block", "zone": "blue_home"}], "source": "camera"}).json()
+check("step 4 fails when blue moved back out (cumulative)", r["can_advance"] is False, f"-> {r['message']}")
+c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step4_done"})
 c.post(f"/work-orders/{WO}/advance")
 
-# step 5
+# step 5: all four blocks in complete_zone passes (no finished_assembly object)
 r = c.post(f"/work-orders/{WO}/validate-step", json={"scenario": "step5_done"}).json()
-check("step 5 passes", r["can_advance"] is True)
+check("step 5 passes (all four in complete_zone)", r["can_advance"] is True, f"-> {r['message']}")
 r = c.post(f"/work-orders/{WO}/advance").json()
 check("awaiting final 6S after step 5", "6S" in r["message"])
 
-# final 6S: tool missing blocks close
-r = c.post(f"/work-orders/{WO}/final-6s-check", json={"scenario": "final_6s_tool_missing"}).json()
-check("final 6S blocked when tool missing", r["can_advance"] is False, f"-> {r['message']}")
+# final 6S: a block left in the assembly zone blocks close (blocks-only check)
+r = c.post(f"/work-orders/{WO}/final-6s-check", json={"scenario": "step1_done"}).json()
+check("final 6S blocked when assembly not clear", r["can_advance"] is False, f"-> {r['message']}")
 
 # final 6S pass closes
 r = c.post(f"/work-orders/{WO}/final-6s-check", json={"scenario": "final_6s_pass"}).json()

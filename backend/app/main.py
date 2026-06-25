@@ -12,17 +12,55 @@ Built with mocked vision first: POST a vision state (or a named mock
 scenario) and the same endpoints work whether the evidence comes from
 mock_vision_state.py or a real camera.
 """
+import logging
 import os
 import sys
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+# Make our debug logs ("ppe" PPE checks, "mpi" step verification) visible under
+# uvicorn, which otherwise installs no INFO-level handler on the root logger.
+for _name in ("ppe", "mpi"):
+    _lg = logging.getLogger(_name)
+    if not _lg.handlers:
+        _h = logging.StreamHandler()
+        _h.setFormatter(logging.Formatter("%(levelname)s:%(name)s: %(message)s"))
+        _lg.addHandler(_h)
+        _lg.setLevel(logging.INFO)
+        _lg.propagate = False
+
+
+def _load_dotenv():
+    """Load the repo-root .env into the environment if present (dependency-free).
+
+    Lets `uvicorn app.main:app` pick up secrets like ROBOFLOW_API_KEY without an
+    --env-file flag. Already-set environment variables always win.
+    """
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    path = os.path.join(root, ".env")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
 from .audit_logger import AuditLogger
 from .fake_mes_service import FakeMESService
 from .models import StepResponse, ValidationResponse, WorkOrderSummary
 from .mpi_state_machine import MPIStateMachine
-from .validation_engine import validate_final_6s, validate_step
+from .ppe_routes import router as ppe_router
+from .verification_routes import router as verification_router
+from . import ppe_service, verification_session_service
+from .validation_engine import validate_final_6s, validate_readiness, validate_step
 
 # --- Optional mock vision scenarios (single source of truth in vision/) ------
 # This lets the frontend post {"scenario": "step1_done"} instead of a full
@@ -37,15 +75,6 @@ try:
 except Exception:  # pragma: no cover - mock module is optional at runtime
     build_mock_state = None
 
-# --- Optional Sentry monitoring (sponsor track, isolated) --------------------
-if os.getenv("SENTRY_DSN"):
-    try:
-        import sentry_sdk
-
-        sentry_sdk.init(dsn=os.getenv("SENTRY_DSN"), traces_sample_rate=0.2)
-    except Exception:
-        pass
-
 app = FastAPI(title="Locked Vision MPI — Fake MES", version="0.1.0")
 
 app.add_middleware(
@@ -58,6 +87,11 @@ app.add_middleware(
 mes = FakeMESService()
 sm = MPIStateMachine(mes)
 audit = AuditLogger()
+
+# Safety-Glasses PPE check (/api/ppe/*) and the combined verification-session
+# workflow (/api/verification-sessions/*, /api/work-orders/*/unlock).
+app.include_router(ppe_router)
+app.include_router(verification_router)
 
 
 # --- helpers -----------------------------------------------------------------
@@ -84,11 +118,49 @@ def _resolve_vision(payload):
     return None
 
 
+def _already_placed(rt):
+    """Objects that earlier move-steps legitimately left in their target zone.
+
+    Used so the out-of-sequence check doesn't flag a block that a previous step
+    correctly placed (it stays in the assembly zone across later steps).
+    """
+    return {
+        s["object"]
+        for s in rt.steps
+        if s.get("type") == "move" and s.get("step", 0) < rt.current_step
+    }
+
+
+def _display_source(vision):
+    """Normalize the stored vision source for the frontend status label.
+
+    -> "camera"    : posted by the Python OpenCV bridge (source=camera)
+    -> "simulator" : posted by the dashboard's mock scenario buttons
+    -> "none"      : no evidence received yet
+    """
+    raw = (vision or {}).get("source")
+    if raw == "camera":
+        return "camera"
+    if vision and (vision.get("scenario") or raw == "mock"):
+        return "simulator"
+    if not vision or not vision.get("objects"):
+        return "none"
+    return raw or "external"
+
+
 # --- endpoints ---------------------------------------------------------------
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "locked-vision-mpi-backend"}
+
+
+@app.post("/demo/reset")
+def reset_demo():
+    """Reset all work orders and clear the audit log for a clean re-demo."""
+    sm.reset_all()
+    audit.clear()
+    return {"status": "ok", "message": "Demo reset. All work orders back to queued."}
 
 
 @app.get("/work-orders", response_model=list[WorkOrderSummary])
@@ -112,6 +184,16 @@ def list_work_orders():
 @app.post("/work-orders/{work_order_id}/start", response_model=StepResponse)
 def start_work_order(work_order_id: str):
     _require_rt(work_order_id)
+    # Safety gate: when PPE enforcement is enabled, the latest verification
+    # session for this work order must pass BOTH PPE and the block sequence
+    # before it can start. Off by default so the camera-less mock demo is
+    # unaffected.
+    if ppe_service.get_config()["required"]:
+        if not verification_session_service.latest_session_can_open(work_order_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Work Order locked: complete PPE + block-sequence verification first.",
+            )
     rt = sm.start(work_order_id)
     step = sm.current_step_def(work_order_id)
     audit.log(
@@ -169,6 +251,38 @@ def post_vision_state(work_order_id: str, payload: dict = Body(...)):
     }
 
 
+@app.get("/work-orders/{work_order_id}/vision-state")
+def get_vision_state(work_order_id: str):
+    """Latest vision evidence for the work order (polled by the frontend).
+
+    Exposes which source last posted evidence — the Python camera bridge
+    ("camera") or the dashboard's mock buttons ("simulator") — so the UI can
+    show that real camera evidence arrives through the external OpenCV bridge.
+    """
+    rt = _require_rt(work_order_id)
+    vision = rt.latest_vision or {}
+    source = _display_source(vision)
+    return {
+        "work_order_id": work_order_id,
+        "source": source,
+        "camera_locked": bool(rt.camera_locked) or source == "camera",
+        "objects": vision.get("objects", []),
+        "scenario": vision.get("scenario"),
+        "updated_at": rt.vision_updated_at,
+    }
+
+
+@app.post("/work-orders/{work_order_id}/validate-readiness")
+def validate_readiness_endpoint(work_order_id: str, payload: dict = Body(default={})):
+    """Pre-start station-readiness gate (not audit-logged; safe to poll)."""
+    rt = _require_rt(work_order_id)
+    vision = _resolve_vision(payload)
+    if vision is not None:
+        sm.set_vision(work_order_id, vision)
+    result = validate_readiness(rt.latest_vision)
+    return {"work_order_id": work_order_id, **result}
+
+
 @app.post("/work-orders/{work_order_id}/validate-step", response_model=ValidationResponse)
 def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
     rt = _require_rt(work_order_id)
@@ -192,7 +306,7 @@ def validate_current_step(work_order_id: str, payload: dict = Body(default={})):
             detected_objects=rt.latest_vision.get("objects", []),
         )
 
-    result = validate_step(step, rt.latest_vision, rt.progress)
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt), all_steps=rt.steps)
     audit.log(
         work_order_id, event="validate-step", step=rt.current_step,
         status=result["status"], message=result["message"],
@@ -228,7 +342,7 @@ def advance(work_order_id: str, payload: dict = Body(default={})):
         )
 
     # Re-validate before advancing. This is the hard gate.
-    result = validate_step(step, rt.latest_vision, rt.progress)
+    result = validate_step(step, rt.latest_vision, rt.progress, _already_placed(rt), all_steps=rt.steps)
     if not result["can_advance"]:
         audit.log(
             work_order_id, event="advance-blocked", step=rt.current_step,

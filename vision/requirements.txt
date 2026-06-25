@@ -1,3 +1,4 @@
 opencv-python==4.10.0.84
-numpy==1.26.4
-requests==2.32.3
+numpy>=2.0,<3        # inference-sdk pulls numpy 2.x; cv2 4.10 is compatible
+requests>=2.32
+inference-sdk>=1.3  # Roboflow Workflow client (roboflow_workflow_stream.py + PPE provider)

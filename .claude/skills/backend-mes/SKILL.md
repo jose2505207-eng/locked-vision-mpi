@@ -14,7 +14,7 @@ Build and maintain the backend that is the **source of truth** for Locked Vision
 - Creating or editing any file under `backend/`.
 - Adding/changing work orders, MPI steps, or zone definitions.
 - Implementing or fixing the state machine, validation engine, or audit logging.
-- Wiring backend endpoints consumed by the frontend or sponsor agents.
+- Wiring backend endpoints consumed by the frontend.
 
 ## Inputs Claude should inspect
 

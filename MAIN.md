@@ -34,7 +34,7 @@ The result is a workstation where the digital instruction and the physical reali
 
 ## 5. Non-Negotiable Architecture Rules
 
-These are absolute. Do not violate them, and do not let sponsor features erode them.
+These are absolute. Do not violate them.
 
 1. **The fake MES is the source of truth.** Work orders, MPI steps, and zones come from MES data.
 2. **The vision system provides evidence only.** It reports what it sees; it does not decide flow.
@@ -42,7 +42,6 @@ These are absolute. Do not violate them, and do not let sponsor features erode t
 4. **The frontend must NEVER allow manual advancement unless the backend returns `can_advance=true`.** No client-side override, ever.
 5. **No work order closes until final 6S passes** (all parts/tools home).
 6. **Every pass and every failure is logged** to the audit log.
-7. **Sponsor integrations must never break the core demo.** They are additive and isolated.
 
 Data flow:
 
@@ -59,32 +58,25 @@ Fake MES (truth) ──► MPI Step Data ──► State Machine ──► can_a
                                         Frontend (obeys can_advance)
 ```
 
-## 6. Team Roles (4 People)
+## 6. System Modules
 
-### Person 1 — Backend / MES Lead
+### Backend / MES
 - Fake MES, work orders, MPI step data
 - State machine, validation engine, audit log, backend API
-- **Outcome:** backend runs the full work order flow with mocked vision data first, then real vision state later.
+- **Outcome:** the backend runs the full work order flow on mocked vision first, then on real vision state.
 - **Skill:** `/backend-mes`
 
-### Person 2 — Vision / Data Lead
+### Vision / Data
 - Camera setup, golden view, OpenCV color detection
-- Zone mapping, camera lock/calibration placeholder, snapshot capture, dataset structure
-- **Outcome:** vision module detects colored LEGO blocks, maps objects to zones, and returns structured vision state to the backend.
+- Zone mapping, camera lock/calibration, snapshot capture, dataset structure
+- **Outcome:** the vision module detects colored LEGO blocks, maps objects to zones, and returns structured vision state to the backend.
 - **Skill:** `/vision-camera`
 
-### Person 3 — Frontend / UI Lead
+### Frontend / UI
 - Fake MES dashboard, work order queue, MPI step screen
 - Disabled/enabled Next Step button, live camera/snapshot panel, detected objects panel, error banner, audit log UI, final 6S screen
 - **Outcome:** the UI makes the workflow obvious in 10 seconds and never allows advancement unless `can_advance=true`.
 - **Skill:** `/frontend-ui`
-
-### Person 4 — Sponsor / Agents / DevOps Lead
-- Sponsor integration plan, Fetch AI supervisor agent scaffold
-- Sentry monitoring, Redis memory placeholder, Deepgram voice placeholder
-- Deployment plan, README, Devpost readiness, demo script
-- **Outcome:** the repo is public-ready, sponsor-aware, easy to run, and demo-ready.
-- **Skill:** `/sponsor-integrations`, `/demo-readiness`, `/github-handoff`
 
 ## 7. Folder Structure
 
@@ -93,17 +85,19 @@ LockedVisionMPI/
 ├── MAIN.md                          # this file — the project brain
 ├── README.md                        # public-facing run instructions
 ├── ARCHITECTURE.md                  # technical architecture
-├── TEAM_ROLES.md                    # who owns what
 ├── DEMO_SCRIPT.md                   # the exact demo run-of-show
-├── SPONSOR_INTEGRATIONS.md          # sponsor mapping & isolation
+├── DEMO_NOTES.md                    # demo prep notes / troubleshooting
 │
 ├── backend/
+│   ├── smoke_test.py                # end-to-end WO-1001 flow check
 │   └── app/
 │       ├── main.py                  # FastAPI entrypoint
 │       ├── fake_mes_service.py      # source-of-truth MES
 │       ├── mpi_state_machine.py     # MPI sequence + can_advance
 │       ├── validation_engine.py     # evidence vs expected
 │       ├── audit_logger.py          # append-only audit log
+│       ├── ppe_service.py           # Safety-Glasses PPE verification (Roboflow)
+│       ├── verification_session_service.py  # PPE + sequence gate before WO start
 │       ├── models.py                # pydantic models
 │       └── data/
 │           ├── work_orders.json
@@ -115,7 +109,8 @@ LockedVisionMPI/
 │   ├── camera.py                    # fixed camera capture
 │   ├── color_detector.py            # OpenCV LEGO color detection
 │   ├── zone_mapper.py               # object → zone mapping
-│   ├── calibration.py               # camera lock / calibration placeholder
+│   ├── calibration.py               # camera lock / calibration
+│   ├── run_vision.py                # camera bridge → posts evidence to backend
 │   ├── mock_vision_state.py         # mocked vision for backend dev
 │   └── snapshots/                   # captured evidence images
 │
@@ -123,22 +118,9 @@ LockedVisionMPI/
 │   └── src/
 │       ├── App.jsx
 │       ├── api.js
-│       └── components/
-│           ├── WorkOrderQueue.jsx
-│           ├── StationReadinessPanel.jsx
-│           ├── MPIStepPanel.jsx
-│           ├── LiveCameraPanel.jsx
-│           ├── DetectedObjectsPanel.jsx
-│           ├── ErrorBanner.jsx
-│           ├── AuditLogPanel.jsx
-│           └── Final6SCheckPanel.jsx
+│       └── components/              # queue, step panel, camera, audit log, 6S, …
 │
-├── integrations/
-│   ├── fetch_agent/                 # Fetch AI supervisor agent scaffold
-│   ├── sentry/                      # error monitoring
-│   ├── redis/                       # memory placeholder
-│   ├── deepgram/                    # voice placeholder
-│   └── arize/                       # optional observability
+├── docs/                            # backend / frontend / setup / testing guides
 │
 └── .claude/
     └── skills/
@@ -146,7 +128,6 @@ LockedVisionMPI/
         ├── backend-mes/SKILL.md
         ├── vision-camera/SKILL.md
         ├── frontend-ui/SKILL.md
-        ├── sponsor-integrations/SKILL.md
         ├── demo-readiness/SKILL.md
         ├── code-review/SKILL.md
         └── github-handoff/SKILL.md
@@ -168,7 +149,6 @@ LockedVisionMPI/
 - Real MES integration, auth, multi-user, databases.
 - ML model training, object classification beyond color.
 - Mobile, multi-station, scaling, fancy auth.
-- Any sponsor feature that doesn't reinforce the MPI story.
 
 ## 9. Demo Flow
 
@@ -179,15 +159,7 @@ LockedVisionMPI/
 
 Narration anchor: *"The MPI only moves forward when the real world is correct."*
 
-## 10. Sponsor Prize Strategy
-
-- **Primary:** Best Physical AI Hack — the locked camera + MES + state machine is the whole story.
-- **Strong fits:** Fetch AI (supervisor agent), Anthropic / Claude Code (built with this skill system), Sentry (live error monitoring), Deepgram (voice operator prompts), Redis (station memory).
-- **Optional:** Arize or Terac (observability) if time allows.
-
-Rule: **every sponsor integration must support the manufacturing/MPI story.** No random sponsor feature is allowed to distract from the core physical AI demo.
-
-## 11. Build Order
+## 10. Build Order
 
 1. **Backend skeleton + data files** — MES data, models, FastAPI up.
 2. **Mock vision state** — so backend can run end-to-end without a camera.
@@ -196,10 +168,9 @@ Rule: **every sponsor integration must support the manufacturing/MPI story.** No
 5. **Frontend wired to backend** — gated Next button proven against mock vision.
 6. **Real vision (OpenCV)** — color detection + zone mapping replaces mock.
 7. **Final 6S gate** — closure blocked until home.
-8. **Sponsor integrations** — isolated, additive.
-9. **Demo readiness** — README, demo script, dry run.
+8. **Demo readiness** — README, demo script, dry run.
 
-## 12. Definition of Done
+## 11. Definition of Done
 
 - Backend never returns `can_advance=true` unless validation passes.
 - Frontend Next button is impossible to use unless `can_advance=true`.
@@ -208,26 +179,25 @@ Rule: **every sponsor integration must support the manufacturing/MPI story.** No
 - Every pass and failure appears in the audit log.
 - App runs from a clean clone with documented commands.
 - Demo flow runs start to finish without manual hacks.
-- Sponsor integrations can be removed without breaking the core demo.
 
-## 13. Safety / Compliance Notes
+## 12. Safety / Compliance Notes
 
 - This is a **fake/mock MES** for demonstration. It is not connected to any real production system and must not be represented as production-grade.
 - No real PII, credentials, or customer data. Use dummy work orders only.
-- The audit log is demo evidence, not a certified compliance record.
-- Sponsor API keys must be stored in environment variables / `.env`, never committed.
+- The audit log is prototype evidence, not a certified compliance record.
+- API keys must be stored in environment variables / `.env`, never committed.
 - The camera supervises blocks and tools only — no people-tracking, no biometric capture.
 
-## 14. Claude Code Usage Instructions
+## 13. Claude Code Usage Instructions
 
 - **Start every session by reading this file (MAIN.md).**
-- Pick the skill that matches your task and invoke it (see section 15). Skills enforce the rules so you don't have to remember them.
+- Pick the skill that matches your task and invoke it (see section 14). Skills enforce the rules so you don't have to remember them.
 - For planning or cross-cutting decisions, use `/project-orchestrator` first.
-- Stay inside your role's files. Respect each skill's "Files this skill should not touch."
+- Stay inside the files your task touches. Respect each skill's "Files this skill should not touch."
 - Before any commit or demo, run `/code-review`.
 - Never bypass the architecture rules in section 5, even if a shortcut is faster.
 
-## 15. Available Project Skills
+## 14. Available Project Skills
 
 | Skill | Slash command | Use when... |
 |---|---|---|
@@ -235,9 +205,8 @@ Rule: **every sponsor integration must support the manufacturing/MPI story.** No
 | backend-mes | `/backend-mes` | Building/editing FastAPI, fake MES, MPI logic, state machine, validation, audit logs, work order state. |
 | vision-camera | `/vision-camera` | Building/editing camera, OpenCV detection, zone mapping, calibration, snapshots, dataset capture. |
 | frontend-ui | `/frontend-ui` | Building/editing the fake MES dashboard and all UI components. |
-| sponsor-integrations | `/sponsor-integrations` | Adding sponsor features (Fetch, Sentry, Redis, Deepgram, Arize) without corrupting the main product. |
-| demo-readiness | `/demo-readiness` | Preparing the demo, pitch, README, architecture doc, or final submission. |
+| demo-readiness | `/demo-readiness` | Preparing the demo, pitch, README, or architecture doc. |
 | code-review | `/code-review` | Before commits and before the demo — checking rules, demo path, and demo-killing bugs. |
-| github-handoff | `/github-handoff` | Preparing commits, repo structure, handoff docs, and teammate instructions. |
+| github-handoff | `/github-handoff` | Preparing commits, repo structure, handoff docs, and contributor instructions. |
 
 **Recommended first command:** `/project-orchestrator`

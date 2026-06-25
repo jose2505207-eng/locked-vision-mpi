@@ -8,7 +8,7 @@
 
 ---
 
-## Setup (before judges arrive)
+## Setup (before the walkthrough)
 
 ```bash
 # Terminal 1
@@ -18,7 +18,7 @@ cd frontend && npm run dev
 ```
 
 Open http://localhost:5173. Confirm "backend online" (green dot). The camera-less
-demo is driven by the **Vision Simulator** buttons in the camera panel (each posts
+walkthrough is driven by the **Vision Simulator** buttons in the camera panel (each posts
 mock vision evidence). For a physical demo, replace those with real camera pushes
 (`vision/` README) — the backend behaves identically.
 
